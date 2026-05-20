@@ -1,10 +1,11 @@
 //! HKDF-SHA256 subkey derivation.
 //!
-//! The crate's master secret is a 32-byte high-entropy value, so HKDF's salt
-//! extraction phase is unnecessary — we pass `None` as the salt and rely on
-//! HKDF's `expand` step to domain-separate subkeys via the `info` context
-//! string. The three context constants (`WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX`)
-//! are stable wire format; changing them invalidates every existing vault.
+//! The crate's master secret is a 32-byte high-entropy value, so we do not
+//! supply an external salt: `Hkdf::new(None, ...)` still performs HKDF-Extract
+//! against an empty/default salt, then `expand` domain-separates subkeys via
+//! the `info` context string. The three context constants (`WRAP_CTX`,
+//! `METADATA_CTX`, `SIGN_CTX`) are stable wire format; changing them
+//! invalidates every existing vault.
 
 use hkdf::Hkdf;
 use sha2::Sha256;

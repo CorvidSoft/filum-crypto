@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-20
 **Status:** Approved, ready for plan
-**Related:** [Filer DESIGN.md §4](../../../../filer/docs/DESIGN.md) (sibling repo)
+**Related:** [Filer DESIGN.md §4](https://github.com/CorvidSoft/filer/blob/main/docs/DESIGN.md) (closed-source sibling repo)
 
 ## 1. Goal
 

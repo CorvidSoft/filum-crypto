@@ -16,7 +16,7 @@ The public API is a single `Vault` type plus a few stateless functions in the `r
 
 ## Status
 
-This repository is in early development. The pure-Rust core (`crates/filer-crypto/`) is complete and tested. The UniFFI binding layer + Swift Package wrapper are scaffolded but not yet implemented — see [docs/superpowers/plans/](docs/superpowers/plans/).
+This repository is in early development. The pure-Rust core (`crates/filer-crypto/`) is complete and tested. A placeholder `crates/filer-crypto-uniffi/` crate exists to keep the workspace resolving, but the actual UniFFI bindings, `Package.swift`, and generated Swift sources are deferred to a follow-up PR — see [docs/superpowers/plans/](docs/superpowers/plans/).
 
 ## Building
 

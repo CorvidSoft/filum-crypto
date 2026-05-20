@@ -11,9 +11,9 @@ pub enum FilerCryptoError {
     /// directions because the AEAD library returns the same opaque error type
     /// for either, and exposing more detail risks leaking timing or position
     /// information. Decryption failure is the common case (tag mismatch,
-    /// wrong key, tampered ciphertext); encryption failure is rare (only
-    /// reachable via the buffer-too-small condition that the Vec-based API
-    /// never hits).
+    /// wrong key, tampered ciphertext); encryption failures are rare in
+    /// practice but can occur (e.g. message length limits in AES-GCM, output
+    /// buffer issues in other backends).
     #[error("AEAD operation failed")]
     Aead,
     #[error("invalid recovery phrase")]
