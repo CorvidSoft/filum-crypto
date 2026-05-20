@@ -1,0 +1,4 @@
+[bindings.swift]
+ffi_module_name = "filer_cryptoFFI"
+module_name = "FilerCrypto"
+generate_module_map = true

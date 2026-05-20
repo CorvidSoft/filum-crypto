@@ -1,0 +1,61 @@
+namespace filer_crypto {
+    [Throws=FilerCryptoError]
+    sequence<u8> generate_master_secret();
+
+    [Throws=FilerCryptoError]
+    string secret_to_phrase(sequence<u8> secret);
+
+    [Throws=FilerCryptoError]
+    sequence<u8> phrase_to_secret(string phrase);
+
+    [Throws=FilerCryptoError]
+    void verify_signature(sequence<u8> public_key, sequence<u8> nonce, sequence<u8> signature);
+};
+
+[Error]
+enum FilerCryptoError {
+    "Aead",
+    "InvalidPhrase",
+    "InvalidKeyLength",
+    "InvalidSignature",
+    "Randomness",
+};
+
+dictionary EncryptedBlob {
+    sequence<u8> ciphertext;
+    sequence<u8> iv;
+    sequence<u8> wrapped_key;
+};
+
+dictionary EncryptedField {
+    sequence<u8> ciphertext;
+    sequence<u8> iv;
+};
+
+dictionary DeviceSignature {
+    sequence<u8> bytes;
+};
+
+interface Vault {
+    [Throws=FilerCryptoError, Name=open]
+    constructor(sequence<u8> master_secret);
+
+    [Throws=FilerCryptoError, Name=from_recovery_phrase]
+    constructor(string phrase);
+
+    [Throws=FilerCryptoError]
+    EncryptedBlob encrypt_blob(sequence<u8> plaintext);
+
+    [Throws=FilerCryptoError]
+    sequence<u8> decrypt_blob(EncryptedBlob blob);
+
+    [Throws=FilerCryptoError]
+    EncryptedField encrypt_metadata_field(sequence<u8> plaintext);
+
+    [Throws=FilerCryptoError]
+    sequence<u8> decrypt_metadata_field(EncryptedField field);
+
+    DeviceSignature sign_challenge(sequence<u8> nonce);
+
+    sequence<u8> device_public_key();
+};
