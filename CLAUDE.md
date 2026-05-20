@@ -24,6 +24,8 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 
 9. **Binding crate stays on Rust edition 2021.** UniFFI's `udl_derive` generates blanket impls (`impl<UT> Lower<UT> for ...`) that violate Rust 2024's tightened orphan rules. The core crate stays on 2024; only the binding glue is downgraded. Don't try to "fix" this without a UniFFI release that supports edition 2024.
 
+10. **New dependencies pin to the latest stable release.** When adding a dep (or accepting a transitive one as a workspace dep), check `cargo search <crate>` or crates.io first and use the latest. Don't copy the version from a plan, an example, or an existing Cargo.toml — those drift. Old versions sometimes hide bugs you'd otherwise hit, and the longer the lag, the bigger the surprise when you finally bump. This applies in both directions: bumping an existing dep also means picking the current latest, not the next minor up.
+
 ## Repo map
 
 - `crates/filer-crypto/` — pure-Rust core. Public API is `Vault` in `vault.rs` + stateless functions in `recovery.rs`.

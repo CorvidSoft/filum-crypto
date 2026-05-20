@@ -22,4 +22,4 @@ zeroize = { version = "1.7", features = ["zeroize_derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 getrandom = "0.2"
 thiserror = "2.0"
-uniffi = "0.29"
+uniffi = "0.31"

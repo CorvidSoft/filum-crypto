@@ -352,19 +352,29 @@ private func uniffiTraitInterfaceCallWithError<T, E>(
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
 }
+// Initial value and increment amount for handles. 
+// These ensure that SWIFT handles always have the lowest bit set
+fileprivate let UNIFFI_HANDLEMAP_INITIAL: UInt64 = 1
+fileprivate let UNIFFI_HANDLEMAP_DELTA: UInt64 = 2
+
 fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
     // All mutation happens with this lock held, which is why we implement @unchecked Sendable.
     private let lock = NSLock()
     private var map: [UInt64: T] = [:]
-    private var currentHandle: UInt64 = 1
+    private var currentHandle: UInt64 = UNIFFI_HANDLEMAP_INITIAL
 
     func insert(obj: T) -> UInt64 {
         lock.withLock {
-            let handle = currentHandle
-            currentHandle += 1
-            map[handle] = obj
-            return handle
+            return doInsert(obj)
         }
+    }
+
+    // Low-level insert function, this assumes `lock` is held.
+    private func doInsert(_ obj: T) -> UInt64 {
+        let handle = currentHandle
+        currentHandle += UNIFFI_HANDLEMAP_DELTA
+        map[handle] = obj
+        return handle
     }
 
      func get(handle: UInt64) throws -> T {
@@ -373,6 +383,15 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
                 throw UniffiInternalError.unexpectedStaleHandle
             }
             return obj
+        }
+    }
+
+     func clone(handle: UInt64) throws -> UInt64 {
+        try lock.withLock {
+            guard let obj = map[handle] else {
+                throw UniffiInternalError.unexpectedStaleHandle
+            }
+            return doInsert(obj)
         }
     }
 
@@ -473,13 +492,13 @@ public protocol VaultProtocol: AnyObject, Sendable {
     
 }
 open class Vault: VaultProtocol, @unchecked Sendable {
-    fileprivate let pointer: UnsafeMutableRawPointer!
+    fileprivate let handle: UInt64
 
-    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public struct NoPointer {
+    public struct NoHandle {
         public init() {}
     }
 
@@ -489,36 +508,37 @@ open class Vault: VaultProtocol, @unchecked Sendable {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
     }
 
     // This constructor can be used to instantiate a fake object.
-    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
     //
     // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
+    public init(noHandle: NoHandle) {
+        self.handle = 0
     }
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
-        return try! rustCall { uniffi_filer_crypto_fn_clone_vault(self.pointer, $0) }
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_filer_crypto_fn_clone_vault(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
     deinit {
-        guard let pointer = pointer else {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
             return
         }
 
-        try! rustCall { uniffi_filer_crypto_fn_free_vault(pointer, $0) }
+        try! rustCall { uniffi_filer_crypto_fn_free_vault(handle, $0) }
     }
 
     
@@ -542,7 +562,8 @@ public static func `open`(masterSecret: [UInt8])throws  -> Vault  {
     
 open func decryptBlob(blob: EncryptedBlob)throws  -> [UInt8]  {
     return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_decrypt_blob(self.uniffiClonePointer(),
+    uniffi_filer_crypto_fn_method_vault_decrypt_blob(
+            self.uniffiCloneHandle(),
         FfiConverterTypeEncryptedBlob_lower(blob),$0
     )
 })
@@ -550,7 +571,8 @@ open func decryptBlob(blob: EncryptedBlob)throws  -> [UInt8]  {
     
 open func decryptMetadataField(field: EncryptedField)throws  -> [UInt8]  {
     return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_decrypt_metadata_field(self.uniffiClonePointer(),
+    uniffi_filer_crypto_fn_method_vault_decrypt_metadata_field(
+            self.uniffiCloneHandle(),
         FfiConverterTypeEncryptedField_lower(field),$0
     )
 })
@@ -558,14 +580,16 @@ open func decryptMetadataField(field: EncryptedField)throws  -> [UInt8]  {
     
 open func devicePublicKey() -> [UInt8]  {
     return try!  FfiConverterSequenceUInt8.lift(try! rustCall() {
-    uniffi_filer_crypto_fn_method_vault_device_public_key(self.uniffiClonePointer(),$0
+    uniffi_filer_crypto_fn_method_vault_device_public_key(
+            self.uniffiCloneHandle(),$0
     )
 })
 }
     
 open func encryptBlob(plaintext: [UInt8])throws  -> EncryptedBlob  {
     return try  FfiConverterTypeEncryptedBlob_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_encrypt_blob(self.uniffiClonePointer(),
+    uniffi_filer_crypto_fn_method_vault_encrypt_blob(
+            self.uniffiCloneHandle(),
         FfiConverterSequenceUInt8.lower(plaintext),$0
     )
 })
@@ -573,7 +597,8 @@ open func encryptBlob(plaintext: [UInt8])throws  -> EncryptedBlob  {
     
 open func encryptMetadataField(plaintext: [UInt8])throws  -> EncryptedField  {
     return try  FfiConverterTypeEncryptedField_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_encrypt_metadata_field(self.uniffiClonePointer(),
+    uniffi_filer_crypto_fn_method_vault_encrypt_metadata_field(
+            self.uniffiCloneHandle(),
         FfiConverterSequenceUInt8.lower(plaintext),$0
     )
 })
@@ -581,13 +606,15 @@ open func encryptMetadataField(plaintext: [UInt8])throws  -> EncryptedField  {
     
 open func signChallenge(nonce: [UInt8]) -> DeviceSignature  {
     return try!  FfiConverterTypeDeviceSignature_lift(try! rustCall() {
-    uniffi_filer_crypto_fn_method_vault_sign_challenge(self.uniffiClonePointer(),
+    uniffi_filer_crypto_fn_method_vault_sign_challenge(
+            self.uniffiCloneHandle(),
         FfiConverterSequenceUInt8.lower(nonce),$0
     )
 })
 }
     
 
+    
 }
 
 
@@ -595,33 +622,24 @@ open func signChallenge(nonce: [UInt8]) -> DeviceSignature  {
 @_documentation(visibility: private)
 #endif
 public struct FfiConverterTypeVault: FfiConverter {
-
-    typealias FfiType = UnsafeMutableRawPointer
+    typealias FfiType = UInt64
     typealias SwiftType = Vault
 
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> Vault {
-        return Vault(unsafeFromRawPointer: pointer)
+    public static func lift(_ handle: UInt64) throws -> Vault {
+        return Vault(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: Vault) -> UnsafeMutableRawPointer {
-        return value.uniffiClonePointer()
+    public static func lower(_ value: Vault) -> UInt64 {
+        return value.uniffiCloneHandle()
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Vault {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
     }
 
     public static func write(_ value: Vault, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+        writeInt(&buf, lower(value))
     }
 }
 
@@ -629,21 +647,21 @@ public struct FfiConverterTypeVault: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeVault_lift(_ pointer: UnsafeMutableRawPointer) throws -> Vault {
-    return try FfiConverterTypeVault.lift(pointer)
+public func FfiConverterTypeVault_lift(_ handle: UInt64) throws -> Vault {
+    return try FfiConverterTypeVault.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeVault_lower(_ value: Vault) -> UnsafeMutableRawPointer {
+public func FfiConverterTypeVault_lower(_ value: Vault) -> UInt64 {
     return FfiConverterTypeVault.lower(value)
 }
 
 
 
 
-public struct DeviceSignature {
+public struct DeviceSignature: Equatable, Hashable {
     public var bytes: [UInt8]
 
     // Default memberwise initializers are never public by default, so we
@@ -651,27 +669,15 @@ public struct DeviceSignature {
     public init(bytes: [UInt8]) {
         self.bytes = bytes
     }
+
+    
+
+    
 }
 
 #if compiler(>=6)
 extension DeviceSignature: Sendable {}
 #endif
-
-
-extension DeviceSignature: Equatable, Hashable {
-    public static func ==(lhs: DeviceSignature, rhs: DeviceSignature) -> Bool {
-        if lhs.bytes != rhs.bytes {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(bytes)
-    }
-}
-
-
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -705,7 +711,7 @@ public func FfiConverterTypeDeviceSignature_lower(_ value: DeviceSignature) -> R
 }
 
 
-public struct EncryptedBlob {
+public struct EncryptedBlob: Equatable, Hashable {
     public var ciphertext: [UInt8]
     public var iv: [UInt8]
     public var wrappedKey: [UInt8]
@@ -717,35 +723,15 @@ public struct EncryptedBlob {
         self.iv = iv
         self.wrappedKey = wrappedKey
     }
+
+    
+
+    
 }
 
 #if compiler(>=6)
 extension EncryptedBlob: Sendable {}
 #endif
-
-
-extension EncryptedBlob: Equatable, Hashable {
-    public static func ==(lhs: EncryptedBlob, rhs: EncryptedBlob) -> Bool {
-        if lhs.ciphertext != rhs.ciphertext {
-            return false
-        }
-        if lhs.iv != rhs.iv {
-            return false
-        }
-        if lhs.wrappedKey != rhs.wrappedKey {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(ciphertext)
-        hasher.combine(iv)
-        hasher.combine(wrappedKey)
-    }
-}
-
-
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -783,7 +769,7 @@ public func FfiConverterTypeEncryptedBlob_lower(_ value: EncryptedBlob) -> RustB
 }
 
 
-public struct EncryptedField {
+public struct EncryptedField: Equatable, Hashable {
     public var ciphertext: [UInt8]
     public var iv: [UInt8]
 
@@ -793,31 +779,15 @@ public struct EncryptedField {
         self.ciphertext = ciphertext
         self.iv = iv
     }
+
+    
+
+    
 }
 
 #if compiler(>=6)
 extension EncryptedField: Sendable {}
 #endif
-
-
-extension EncryptedField: Equatable, Hashable {
-    public static func ==(lhs: EncryptedField, rhs: EncryptedField) -> Bool {
-        if lhs.ciphertext != rhs.ciphertext {
-            return false
-        }
-        if lhs.iv != rhs.iv {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(ciphertext)
-        hasher.combine(iv)
-    }
-}
-
-
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -853,7 +823,7 @@ public func FfiConverterTypeEncryptedField_lower(_ value: EncryptedField) -> Rus
 }
 
 
-public enum FilerCryptoError: Swift.Error {
+public enum FilerCryptoError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -867,8 +837,21 @@ public enum FilerCryptoError: Swift.Error {
     
     case Randomness(message: String)
     
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
 }
 
+#if compiler(>=6)
+extension FilerCryptoError: Sendable {}
+#endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -945,21 +928,6 @@ public func FfiConverterTypeFilerCryptoError_lower(_ value: FilerCryptoError) ->
     return FfiConverterTypeFilerCryptoError.lower(value)
 }
 
-
-extension FilerCryptoError: Equatable, Hashable {}
-
-
-
-
-extension FilerCryptoError: Foundation.LocalizedError {
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-}
-
-
-
-
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -1022,7 +990,7 @@ private enum InitializationResult {
 // the code inside is only computed once.
 private let initializationResult: InitializationResult = {
     // Get the bindings contract version from our ComponentInterface
-    let bindings_contract_version = 29
+    let bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
     let scaffolding_contract_version = ffi_filer_crypto_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
@@ -1040,22 +1008,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_filer_crypto_checksum_func_verify_signature() != 24370) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob() != 62955) {
+    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob() != 63508) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_metadata_field() != 44691) {
+    if (uniffi_filer_crypto_checksum_method_vault_decrypt_metadata_field() != 48460) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_device_public_key() != 20139) {
+    if (uniffi_filer_crypto_checksum_method_vault_device_public_key() != 43615) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_blob() != 22691) {
+    if (uniffi_filer_crypto_checksum_method_vault_encrypt_blob() != 54772) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_metadata_field() != 13669) {
+    if (uniffi_filer_crypto_checksum_method_vault_encrypt_metadata_field() != 39238) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_sign_challenge() != 48258) {
+    if (uniffi_filer_crypto_checksum_method_vault_sign_challenge() != 6062) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filer_crypto_checksum_constructor_vault_from_recovery_phrase() != 40323) {
