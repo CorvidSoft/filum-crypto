@@ -167,9 +167,16 @@ mod tests {
     }
 
     #[test]
-    fn nondeterministic_ciphertext_for_same_input() {
-        // Per-blob random data key + IV means two encryptions of the same
-        // plaintext produce different ciphertexts.
+    fn iv_and_data_key_are_fresh_per_encryption() {
+        // Defense against accidental IV/key caching: each encryption MUST pull
+        // fresh randomness for the data key and both IVs. A refactor that
+        // memoized any of these would produce identical envelopes here and
+        // catastrophically break the AES-GCM contract.
+        //
+        // Technically probabilistic — the test would pass falsely if OsRng
+        // returned the same 12-byte IV twice in a row (collision probability
+        // 2^-96) — but that's well below the cosmic-ray bit-flip threshold
+        // and not worth defending against with an injected RNG.
         let key = [42u8; 32];
         let a = encrypt_with_key_wrapping(b"same", &key).unwrap();
         let b = encrypt_with_key_wrapping(b"same", &key).unwrap();

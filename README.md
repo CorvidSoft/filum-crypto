@@ -27,7 +27,7 @@ cargo test --workspace
 
 ## Consuming from Swift
 
-The repo is shaped as a Swift Package. The Package.swift manifest, UniFFI binding crate, and generated Swift bindings land in a follow-up PR. Until then, this crate is Rust-only.
+This repo will be consumed as a Swift Package once the `Package.swift` manifest, UniFFI binding crate, and generated Swift bindings land in a follow-up PR. Right now, only the pure-Rust core is shipped — there is no SPM target to add yet.
 
 When the binding layer ships, the mobile app will consume this repo via SPM. Its Expo config plugin (`with-crypto-core` in the closed-source Filer mobile repo) handles linking.
 

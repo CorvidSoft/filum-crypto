@@ -10,7 +10,7 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 
 2. **Stay in the RustCrypto family.** No `ring`, no `openssl`, no `rustls`. The dependency tree is intentionally small and audit-friendly. Adding a non-RustCrypto crypto dep requires explicit justification (open an issue first).
 
-3. **Key-bearing locals zeroize on drop.** Any `[u8; 32]` (or larger) that holds key material, master secret, or intermediate derivation output is wrapped in `zeroize::Zeroizing<_>` (the RAII guard) so it wipes on any return path, not just the happy path. Adding a key-bearing local without `Zeroizing` is a bug. The `Vault` struct has its own explicit `Drop` impl for the same reason.
+3. **Key-bearing values zeroize on drop.** Any `[u8; 32]` (or larger) that holds key material, master secret, or intermediate derivation output is wrapped in `zeroize::Zeroizing<_>` (the RAII guard) so it wipes on any return path, not just the happy path. Adding a key-bearing local without `Zeroizing` is a bug. `Vault`'s `wrap_key` and `metadata_key` fields are themselves `Zeroizing<[u8; 32]>`, which makes them non-`Copy` and auto-wipes on `Vault` drop without needing a manual `Drop` impl. `SigningKey` zeroizes via `ed25519-dalek`'s `zeroize` feature.
 
 4. **Constant-time comparisons for secrets.** When comparing MAC tags, signatures, or any key-derived bytes, never use `==` — use `subtle::ConstantTimeEq` (the `subtle` crate is intentionally removed from deps until a path actually needs it; re-add then). AEAD tag verification is constant-time inside `aes-gcm`, so we rely on the AEAD API rather than manual tag comparison.
 

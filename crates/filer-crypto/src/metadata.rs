@@ -76,7 +76,11 @@ mod tests {
     }
 
     #[test]
-    fn nondeterministic_for_same_input() {
+    fn iv_is_fresh_per_encryption() {
+        // Defense against accidental IV caching — each encryption MUST pull
+        // fresh randomness. IV reuse under the same AES-GCM key is a
+        // catastrophic failure (allows plaintext recovery). See the matching
+        // test in blob.rs for the flake-probability discussion.
         let key = [7u8; 32];
         let a = encrypt_field(b"same", &key).unwrap();
         let b = encrypt_field(b"same", &key).unwrap();

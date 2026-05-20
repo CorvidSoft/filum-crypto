@@ -111,7 +111,7 @@ Methods:
 - `sign_challenge(nonce: &[u8]) -> DeviceSignature` — Ed25519 over the nonce (infallible given a valid signing key)
 - `device_public_key() -> [u8; 32]` — for backend registration
 
-`Vault` implements `Drop` with `zeroize` so all key material is wiped on close.
+All `Vault` key-bearing fields are stored in `Zeroizing<[u8; 32]>` so they zeroize automatically on drop. `SigningKey` zeroizes via `ed25519-dalek`'s `zeroize` feature. No manual `Drop` impl is needed for the Vault.
 
 ### 4.3 Stateless modules for things that need no key
 
@@ -136,8 +136,8 @@ These structurally match the TypeScript types in `packages/protocol/src/` (which
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum FilerCryptoError {
-    #[error("decryption failed")]
-    Decrypt,
+    #[error("AEAD operation failed")]
+    Aead,
     #[error("invalid recovery phrase")]
     InvalidPhrase,
     #[error("invalid key length")]

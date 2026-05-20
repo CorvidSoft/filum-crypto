@@ -1,5 +1,7 @@
 # filer-crypto Setup Implementation Plan
 
+> **Historical artifact (2026-05-20).** Tasks 1-8 + 15-17 of this plan were executed and shipped in [PR #1](https://github.com/CorvidSoft/filer-crypto/pull/1). The shipped code diverged from the snippets below in a few places due to PR review (notably: `FilerCryptoError::Decrypt` → `Aead`; `Vault` fields are `Zeroizing<[u8;32]>` with no manual `Drop` impl; `subtle` is not a direct dep). See `git log` for the as-shipped state. Tasks 9-14 + 18 are deferred to a follow-up plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Scaffold the `filer-crypto` Rust crate per `docs/superpowers/specs/2026-05-20-filer-crypto-setup-design.md` — Cargo workspace with two crates (pure-Rust core + UniFFI binding layer), the `Vault` public API with five primitives (HKDF, BIP39 24-word recovery, AES-256-GCM blob encryption with key wrapping, AES-256-GCM metadata field encryption, Ed25519 signing), a `Package.swift` wrapper, CI, README, and CLAUDE.md.
@@ -175,8 +177,8 @@ use thiserror::Error;
 /// information about key material or input shape.
 #[derive(Debug, Error)]
 pub enum FilerCryptoError {
-    #[error("decryption failed")]
-    Decrypt,
+    #[error("AEAD operation failed")]
+    Aead,
     #[error("invalid recovery phrase")]
     InvalidPhrase,
     #[error("invalid key length")]
@@ -1385,7 +1387,7 @@ namespace filer_crypto {
 
 [Error]
 enum FilerCryptoError {
-    "Decrypt",
+    "Aead",
     "InvalidPhrase",
     "InvalidKeyLength",
     "InvalidSignature",
