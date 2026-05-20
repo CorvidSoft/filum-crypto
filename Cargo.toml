@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/filer-crypto",
+    "crates/filer-crypto-uniffi",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/CorvidSoft/filer-crypto"
+authors = ["CorvidSoft"]
+version = "0.0.1"
+
+[workspace.dependencies]
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
+bip39 = "2.0"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+subtle = "2.5"
+rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = "0.2"
+thiserror = "2.0"
+uniffi = "0.28"
