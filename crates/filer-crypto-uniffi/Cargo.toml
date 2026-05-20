@@ -1,0 +1,8 @@
+[package]
+name = "filer-crypto-uniffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "UniFFI bindings for filer-crypto (Swift/iOS)"

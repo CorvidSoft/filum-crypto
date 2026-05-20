@@ -1,0 +1,19 @@
+[package]
+name = "filer-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pure-Rust cryptographic core for the Filer iOS app"
+
+[dependencies]
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+ed25519-dalek = { workspace = true }
+bip39 = { workspace = true }
+zeroize = { workspace = true }
+rand_core = { workspace = true }
+getrandom = { workspace = true }
+thiserror = { workspace = true }
