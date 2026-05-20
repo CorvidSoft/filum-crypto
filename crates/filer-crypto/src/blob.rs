@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! AES-256-GCM blob encryption with per-blob random data keys.
 //!
 //! Each blob has:

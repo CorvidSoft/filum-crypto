@@ -5,8 +5,6 @@
 //! identity is stable across reinstalls as long as the master secret is
 //! recovered.
 
-#![allow(dead_code)]
-
 use ed25519_dalek::{Signature, Signer, SigningKey};
 
 use crate::error::{FilerCryptoError, Result};

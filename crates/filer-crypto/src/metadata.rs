@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! AES-256-GCM field-level metadata encryption.
 //!
 //! Used to encrypt sensitive SQLite columns (filenames, document types,

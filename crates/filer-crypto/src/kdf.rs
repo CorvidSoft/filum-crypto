@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use hkdf::Hkdf;
 use sha2::Sha256;
 
