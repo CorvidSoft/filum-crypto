@@ -22,7 +22,7 @@ This spec covers **the crate's structure, public API shape, primitive implementa
   - HKDF-SHA256 key derivation from the master secret to subkeys
   - BIP39 24-word recovery phrase ↔ 32-byte master secret (24 words encode 256 bits — matches the 256-bit security baseline used elsewhere in the envelope)
   - Ed25519 device challenge-response signing
-- UniFFI 0.28 binding crate (`cdylib` + `staticlib`) with a `.udl` interface
+- UniFFI 0.29 binding crate (`cdylib` + `staticlib`) with a `.udl` interface
 - `Package.swift` at repo root declaring a source-Swift target wrapping the generated bindings
 - `Sources/FilerCrypto/FilerCrypto.swift` — the generated binding file, committed to the repo so consumers don't need `uniffi-bindgen` on their machines
 - `scripts/build.sh` — regenerates bindings + builds the Rust libs
@@ -163,7 +163,7 @@ All from the RustCrypto family except `bip39` and `ed25519-dalek`:
 - `subtle` — constant-time comparison. Not declared as a direct dependency in v0.1.0 because no path currently requires it (the AEAD library handles tag verification in constant time internally). Re-add as a direct dependency when a code path needs to compare derived bytes manually (HMAC tags, custom signature schemes, etc.).
 - `rand_core` ^0.6 + `getrandom` ^0.2 — system random
 - `thiserror` ^2.0 — error macros
-- `uniffi` ^0.28 — bindings (binding crate only)
+- `uniffi` ^0.29 — bindings (binding crate only)
 
 No `ring`, no OpenSSL, no `rustls` — keep the dependency tree small and audit-friendly.
 

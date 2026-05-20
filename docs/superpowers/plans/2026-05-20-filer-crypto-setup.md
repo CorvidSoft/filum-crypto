@@ -8,7 +8,7 @@
 
 **Architecture:** Two-crate Cargo workspace. `crates/filer-crypto` is the pure-Rust core with the `Vault` public type and stateless `recovery` module. `crates/filer-crypto-uniffi` exposes the core via UDL to UniFFI, building as `cdylib`/`staticlib` for Swift consumption. A `Package.swift` at repo root wraps the generated bindings; source-only for v0.1.0, XCFramework deferred to first tagged release.
 
-**Tech Stack:** Rust edition 2024 · aes-gcm 0.10 · hkdf 0.12 · sha2 0.10 · ed25519-dalek 2.1 · bip39 2.0 · zeroize 1.7 · subtle 2.5 · rand_core 0.6 · getrandom 0.2 · thiserror 2.0 · uniffi 0.28 · Swift 5.9.
+**Tech Stack:** Rust edition 2024 · aes-gcm 0.10 · hkdf 0.12 · sha2 0.10 · ed25519-dalek 2.1 · bip39 2.0 · zeroize 1.7 · subtle 2.5 · rand_core 0.6 · getrandom 0.2 · thiserror 2.0 · uniffi 0.29 · Swift 5.9.
 
 ---
 
@@ -97,7 +97,7 @@ subtle = "2.5"
 rand_core = { version = "0.6", features = ["getrandom"] }
 getrandom = "0.2"
 thiserror = "2.0"
-uniffi = "0.28"
+uniffi = "0.29"
 ```
 
 - [ ] **Step 2: Extend `.gitignore`**
@@ -2096,7 +2096,7 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 - `bip39` 2.0 (recovery phrase)
 - `zeroize` 1.7, `subtle` 2.5
 - `thiserror` 2.0
-- UniFFI 0.28
+- UniFFI 0.29
 - Swift 5.9+ (Swift Package consumers)
 
 ## Common commands
@@ -2264,7 +2264,7 @@ Open a PR and let CI run.
 
 - **`scripts/build.sh debug` first.** The release profile takes much longer for the first build. Use debug while iterating, release before committing the generated `FilerCrypto.swift` if you want to verify it matches what release would produce.
 
-- **`cargo run --bin uniffi-bindgen` is the recommended invocation.** UniFFI 0.28 ships its own bindgen as a library; embedding it in `crates/filer-crypto-uniffi/src/bin/uniffi-bindgen.rs` means consumers never need `cargo install uniffi-bindgen`.
+- **`cargo run --bin uniffi-bindgen` is the recommended invocation.** UniFFI 0.29 ships its own bindgen as a library; embedding it in `crates/filer-crypto-uniffi/src/bin/uniffi-bindgen.rs` means consumers never need `cargo install uniffi-bindgen`.
 
 - **The `Mutex` around `CoreVault` in the binding layer is a UniFFI requirement.** UniFFI interfaces must be `Send + Sync`; `CoreVault` is `Send` but not `Sync` because of the SigningKey internals. The Mutex is the standard workaround.
 

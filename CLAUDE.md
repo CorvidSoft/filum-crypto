@@ -39,7 +39,7 @@ Files that will land in the follow-up PR: `Package.swift`, `Sources/FilerCrypto/
 - `bip39` 2.0 (recovery phrase)
 - `zeroize` 1.7
 - `thiserror` 2.0
-- UniFFI 0.28 (in placeholder crate; wired in follow-up)
+- UniFFI 0.29 (binding crate)
 - Swift 5.9+ target (Swift Package consumers, follow-up)
 
 ## Common commands
