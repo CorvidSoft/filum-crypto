@@ -28,6 +28,7 @@ This spec covers **the crate's structure, public API shape, and Swift Package wi
 - `scripts/build.sh` — regenerates bindings + builds the Rust libs
 - GitHub Actions CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` on Linux
 - A README that explains: what this crate is, what it's used for, how to build, where to file issues
+- A `CLAUDE.md` at the repo root that gives a coding agent the hard invariants and conventions of this repo without re-reading the consumer (Filer) DESIGN.md every session
 
 ### Out of scope
 
@@ -82,6 +83,7 @@ filer-crypto/
 │   └── superpowers/
 │       └── specs/
 │           └── 2026-05-20-filer-crypto-setup-design.md   # this file
+├── CLAUDE.md                           # agent guide (this repo's conventions)
 ├── README.md                           # public-facing
 ├── LICENSE                             # MIT, already present
 └── .gitignore                          # Rust-flavored, already present
@@ -180,6 +182,27 @@ When the first device-build milestone arrives, switch `Package.swift` to a `bina
 
 The `scripts/build.sh` regenerates the file after any UDL change. Pre-commit or CI can guard against drift if needed; for v0.1.0, manual discipline.
 
+### 4.9 CLAUDE.md content plan
+
+Single file at repo root, ~150 lines. Sections in order:
+
+1. **What this is** — one paragraph: open-source crypto core for the Filer iOS app (closed-source sibling repo). Link to that repo's DESIGN.md for product context, but emphasize that an agent working in this repo should NOT need it for day-to-day work.
+2. **Hard invariants** — bullets a coding agent must not violate:
+   - Never log or print key material, master secrets, or signatures. Not in tests, not in error messages, not in `Debug` impls.
+   - Never use `ring`, `openssl`, or any other non-RustCrypto-family crate without explicit justification. The dep tree is intentionally small and audit-friendly.
+   - All types holding key material implement `Zeroize` and `Drop`-zeroize their fields. Adding a key-bearing type without this is a bug.
+   - Constant-time comparison via `subtle` for any path that compares secrets, MACs, or signature outputs. No `==` on key-derived bytes.
+   - No `panic!`, `unwrap()`, or `expect()` on values that come from user input — these are external crate boundaries, return `Result<_, FilerCryptoError>` instead.
+   - The MIT license is a contract. Don't add dependencies whose license isn't MIT/Apache-2.0/BSD-compatible.
+   - Envelope formats (`EncryptedBlob`, `EncryptedField`) are stable wire format. Changing field names, lengths, or ordering is a major-version compatibility break.
+3. **Repo map** — one-line description per top-level directory
+4. **Tech stack** — Rust edition, UniFFI version, RustCrypto components, Swift Package version target
+5. **Common commands** — `cargo build`, `cargo test --workspace`, `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, `scripts/build.sh`, `swift package describe`
+6. **Public API surface** — pointer to `Vault` in `crates/filer-crypto/src/vault.rs` and the stateless functions in `recovery.rs`. The contract: "If it isn't `pub` from these two modules, it isn't part of the Swift API."
+7. **Adding a new primitive** — short checklist: write the Rust implementation in its own module, add round-trip + KAT tests, expose via `Vault` or as a free function, update the UDL, regenerate bindings via `scripts/build.sh`, commit the regenerated `FilerCrypto.swift`.
+8. **What not to add** — no async (UniFFI sync is fine for v1), no custom serialization (envelopes are simple structs), no extra binding targets in this repo (Android lives in its own follow-up).
+9. **Security disclosure** — pointer to where to file security issues (placeholder for the plan; not in scaffolding).
+
 ## 5. Testing
 
 - **Per-module Rust unit tests**: round-trip tests in each `.rs` file (`encrypt → decrypt → equal`, `phrase → secret → phrase → equal`, etc.)
@@ -225,6 +248,7 @@ The setup is done when:
 8. CI workflow passes on a PR
 9. The mobile app's `with-crypto-core` plugin (in the sibling repo) stops logging "no Package.swift" and proceeds to SPM injection when `expo prebuild` runs against this repo via the local-path mode (`FILER_CRYPTO_LOCAL=1`)
 10. README documents: what the crate is, build commands, where to file security issues
+11. CLAUDE.md exists at repo root, covers every section in §4.9, and a fresh agent reading only CLAUDE.md (no consumer DESIGN.md) can answer: what must never appear in logs, which crypto crate family is allowed, what the `Vault` public API contract is
 
 ## 8. Open questions
 
