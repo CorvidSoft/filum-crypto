@@ -115,7 +115,7 @@ Methods:
 
 ### 4.3 Stateless modules for things that need no key
 
-`recovery::generate_master_secret() -> [u8; 32]` — system random
+`recovery::generate_master_secret() -> Result<[u8; 32]>` — system random (returns `Err(Randomness)` if the OS CSPRNG is unavailable)
 `recovery::secret_to_phrase(secret: &[u8; 32]) -> Result<String>` — BIP39 24-word
 `recovery::phrase_to_secret(phrase: &str) -> Result<[u8; 32]>` — inverse
 
