@@ -952,8 +952,8 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
         return seq
     }
 }
-public func generateMasterSecret() -> [UInt8]  {
-    return try!  FfiConverterSequenceUInt8.lift(try! rustCall() {
+public func generateMasterSecret()throws  -> [UInt8]  {
+    return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
     uniffi_filer_crypto_fn_func_generate_master_secret($0
     )
 })
@@ -996,7 +996,7 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_filer_crypto_checksum_func_generate_master_secret() != 14005) {
+    if (uniffi_filer_crypto_checksum_func_generate_master_secret() != 48501) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filer_crypto_checksum_func_phrase_to_secret() != 52504) {

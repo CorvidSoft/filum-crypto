@@ -1,22 +1,29 @@
 //! UniFFI binding layer for filer-crypto.
 //!
-//! Each UDL type is mirrored here as a thin Rust type. The `Vault` interface
-//! becomes a struct holding the core `filer_crypto::Vault` behind a Mutex.
-//! UniFFI interfaces require `Send + Sync`; the core Vault is already both,
-//! but the Mutex insulates us if any future addition to the core introduces
-//! interior mutability that breaks Sync. Lock contention is negligible
-//! because crypto operations are short.
+//! Each UDL type is mirrored here as a thin Rust type.
+//!
+//! `Vault` holds the core `filer_crypto::Vault` directly (no `Mutex`).
+//! UniFFI interface types must be `Send + Sync`; `CoreVault` satisfies both
+//! because all its fields (`Zeroizing<[u8; 32]>`, `Zeroizing<[u8; 32]>`,
+//! `SigningKey`) are themselves `Send + Sync`. None of the core's methods
+//! take `&mut self`, so no interior mutability is required either. Avoiding
+//! the `Mutex` also avoids needing to handle `PoisonError` at the FFI
+//! boundary, which would violate the no-panic-on-FFI invariant.
 //!
 //! Byte arrays cross the FFI as `Vec<u8>`. We validate fixed-length inputs
 //! (32-byte secrets, 32-byte public keys, 64-byte signatures) inside the
 //! wrapper and return `FilerCryptoError::InvalidKeyLength` on mismatch.
-
-use std::sync::Mutex;
+//!
+//! Secret material (master secrets) is wrapped in `Zeroizing` for the
+//! lifetime it sits in this layer. The incoming `Vec<u8>` from UniFFI's
+//! marshaling is taken by value; we wrap it in `Zeroizing` immediately so
+//! the heap allocation wipes on drop regardless of return path.
 
 use filer_crypto::{
     recovery, DeviceSignature as CoreDeviceSignature, EncryptedBlob as CoreEncryptedBlob,
     EncryptedField as CoreEncryptedField, FilerCryptoError as CoreError, Vault as CoreVault,
 };
+use zeroize::Zeroizing;
 
 // ---- Error type -------------------------------------------------------
 //
@@ -142,11 +149,11 @@ impl From<CoreDeviceSignature> for DeviceSignature {
 // ---- Vault interface --------------------------------------------------
 //
 // `Vault` is declared here so include_scaffolding! can apply udl_derive(Object)
-// to the local type. The struct holds the core Vault behind a Mutex so that
-// UniFFI's Arc<Vault> sharing across threads remains safe.
+// to the local type. Holds CoreVault directly — see module docs for why no
+// Mutex is needed.
 
 pub struct Vault {
-    inner: Mutex<CoreVault>,
+    inner: CoreVault,
 }
 
 // ---- Include scaffolding ----------------------------------------------
@@ -156,29 +163,40 @@ pub struct Vault {
 
 uniffi::include_scaffolding!("filer_crypto");
 
+// ---- Helpers ----------------------------------------------------------
+
+/// Convert a `Vec<u8>` carrying secret material into a `Zeroizing<[u8; 32]>`,
+/// wiping the original Vec's allocation on drop. Returns
+/// `InvalidKeyLength` if the input isn't 32 bytes.
+fn vec_to_secret_array(bytes: Vec<u8>) -> Result<Zeroizing<[u8; 32]>> {
+    let bytes = Zeroizing::new(bytes);
+    if bytes.len() != 32 {
+        return Err(FilerCryptoError::InvalidKeyLength);
+    }
+    let mut array = Zeroizing::new([0u8; 32]);
+    array.copy_from_slice(&bytes);
+    Ok(array)
+}
+
 // ---- Top-level function implementations -------------------------------
 
-fn generate_master_secret() -> Vec<u8> {
-    // recovery::generate_master_secret returns Result<[u8;32]>. The UDL signature
-    // is sequence<u8> with no [Throws] — if the OS CSPRNG truly fails we have no
-    // recovery path, so panic with a clear message. This matches Apple's iOS
-    // semantics where SecRandomCopyBytes failing is a system-level fault.
-    recovery::generate_master_secret()
-        .expect("OS CSPRNG unavailable")
-        .to_vec()
+fn generate_master_secret() -> Result<Vec<u8>> {
+    let secret = recovery::generate_master_secret().map_err(FilerCryptoError::from)?;
+    // Wrap in Zeroizing so the [u8;32] wipes when this scope ends; the
+    // returned Vec is a fresh allocation owned by UniFFI's marshaler.
+    let secret = Zeroizing::new(secret);
+    Ok(secret.to_vec())
 }
 
 fn secret_to_phrase(secret: Vec<u8>) -> Result<String> {
-    let array: [u8; 32] = secret
-        .try_into()
-        .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
+    let array = vec_to_secret_array(secret)?;
     recovery::secret_to_phrase(&array).map_err(Into::into)
 }
 
 fn phrase_to_secret(phrase: String) -> Result<Vec<u8>> {
-    recovery::phrase_to_secret(&phrase)
-        .map(|s| s.to_vec())
-        .map_err(Into::into)
+    let secret = recovery::phrase_to_secret(&phrase).map_err(FilerCryptoError::from)?;
+    let secret = Zeroizing::new(secret);
+    Ok(secret.to_vec())
 }
 
 fn verify_signature(public_key: Vec<u8>, nonce: Vec<u8>, signature: Vec<u8>) -> Result<()> {
@@ -195,27 +213,19 @@ fn verify_signature(public_key: Vec<u8>, nonce: Vec<u8>, signature: Vec<u8>) -> 
 
 impl Vault {
     pub fn open(master_secret: Vec<u8>) -> Result<Self> {
-        let array: [u8; 32] = master_secret
-            .try_into()
-            .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
+        let array = vec_to_secret_array(master_secret)?;
         let core = CoreVault::open(&array).map_err(FilerCryptoError::from)?;
-        Ok(Self {
-            inner: Mutex::new(core),
-        })
+        Ok(Self { inner: core })
     }
 
     pub fn from_recovery_phrase(phrase: String) -> Result<Self> {
         let core = CoreVault::from_recovery_phrase(&phrase).map_err(FilerCryptoError::from)?;
-        Ok(Self {
-            inner: Mutex::new(core),
-        })
+        Ok(Self { inner: core })
     }
 
     pub fn encrypt_blob(&self, plaintext: Vec<u8>) -> Result<EncryptedBlob> {
         let core_blob = self
             .inner
-            .lock()
-            .unwrap()
             .encrypt_blob(&plaintext)
             .map_err(FilerCryptoError::from)?;
         Ok(core_blob.into())
@@ -224,8 +234,6 @@ impl Vault {
     pub fn decrypt_blob(&self, blob: EncryptedBlob) -> Result<Vec<u8>> {
         let core_blob: CoreEncryptedBlob = blob.try_into()?;
         self.inner
-            .lock()
-            .unwrap()
             .decrypt_blob(&core_blob)
             .map_err(FilerCryptoError::from)
     }
@@ -233,8 +241,6 @@ impl Vault {
     pub fn encrypt_metadata_field(&self, plaintext: Vec<u8>) -> Result<EncryptedField> {
         let core_field = self
             .inner
-            .lock()
-            .unwrap()
             .encrypt_metadata_field(&plaintext)
             .map_err(FilerCryptoError::from)?;
         Ok(core_field.into())
@@ -243,17 +249,15 @@ impl Vault {
     pub fn decrypt_metadata_field(&self, field: EncryptedField) -> Result<Vec<u8>> {
         let core_field: CoreEncryptedField = field.try_into()?;
         self.inner
-            .lock()
-            .unwrap()
             .decrypt_metadata_field(&core_field)
             .map_err(FilerCryptoError::from)
     }
 
     pub fn sign_challenge(&self, nonce: Vec<u8>) -> DeviceSignature {
-        self.inner.lock().unwrap().sign_challenge(&nonce).into()
+        self.inner.sign_challenge(&nonce).into()
     }
 
     pub fn device_public_key(&self) -> Vec<u8> {
-        self.inner.lock().unwrap().device_public_key().to_vec()
+        self.inner.device_public_key().to_vec()
     }
 }

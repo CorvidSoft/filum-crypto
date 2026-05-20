@@ -40,12 +40,12 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 ## Tech stack
 
 - Rust edition 2024 (core) / edition 2021 (binding crate, per invariant #9)
-- RustCrypto: `aes-gcm` 0.10, `hkdf` 0.12, `sha2` 0.10
+- RustCrypto: `aes-gcm` 0.10, `hkdf` 0.13, `sha2` 0.11
 - `ed25519-dalek` 2.1 (signing)
 - `bip39` 2.0 (recovery phrase)
-- `zeroize` 1.7
+- `zeroize` 1.8
 - `thiserror` 2.0
-- UniFFI 0.29
+- UniFFI 0.31
 - Swift 5.9+ (Swift Package consumers)
 
 ## Common commands

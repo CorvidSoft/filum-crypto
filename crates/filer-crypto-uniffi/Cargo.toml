@@ -24,6 +24,7 @@ path = "src/bin/uniffi-bindgen.rs"
 filer-crypto = { path = "../filer-crypto" }
 thiserror = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
+zeroize = { workspace = true }
 
 [build-dependencies]
 uniffi = { workspace = true, features = ["build"] }

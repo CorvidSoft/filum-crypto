@@ -22,7 +22,7 @@ This spec covers **the crate's structure, public API shape, primitive implementa
   - HKDF-SHA256 key derivation from the master secret to subkeys
   - BIP39 24-word recovery phrase ↔ 32-byte master secret (24 words encode 256 bits — matches the 256-bit security baseline used elsewhere in the envelope)
   - Ed25519 device challenge-response signing
-- UniFFI 0.29 binding crate (`cdylib` + `staticlib`) with a `.udl` interface
+- UniFFI 0.31 binding crate (`cdylib` + `staticlib`) with a `.udl` interface
 - `Package.swift` at repo root declaring a source-Swift target wrapping the generated bindings
 - `Sources/FilerCrypto/FilerCrypto.swift` — the generated binding file, committed to the repo so consumers don't need `uniffi-bindgen` on their machines
 - `scripts/build.sh` — regenerates bindings + builds the Rust libs
@@ -155,15 +155,15 @@ UniFFI maps this enum to a Swift `enum FilerCryptoError: Error`. No nested cause
 
 All from the RustCrypto family except `bip39` and `ed25519-dalek`:
 
-- `aes-gcm` ^0.10 — AES-256-GCM
-- `hkdf` ^0.12 + `sha2` ^0.10 — HKDF-SHA256
-- `ed25519-dalek` ^2.1 — device signing
+- `aes-gcm` ^0.10 — AES-256-GCM (latest stable; 0.11 is still in release-candidate)
+- `hkdf` ^0.13 + `sha2` ^0.11 — HKDF-SHA256
+- `ed25519-dalek` ^2.1 — device signing (latest stable; 3.0 is still in pre-release)
 - `bip39` ^2.0 — recovery phrase
-- `zeroize` ^1.7 — secure memory wipe
+- `zeroize` ^1.8 — secure memory wipe
 - `subtle` — constant-time comparison. Not declared as a direct dependency in v0.1.0 because no path currently requires it (the AEAD library handles tag verification in constant time internally). Re-add as a direct dependency when a code path needs to compare derived bytes manually (HMAC tags, custom signature schemes, etc.).
-- `rand_core` ^0.6 + `getrandom` ^0.2 — system random
+- `rand_core` ^0.6 + `getrandom` ^0.2 — system random (held back by `ed25519-dalek` 2.x; bump when dalek 3.0 goes stable)
 - `thiserror` ^2.0 — error macros
-- `uniffi` ^0.29 — bindings (binding crate only)
+- `uniffi` ^0.31 — bindings (binding crate only)
 
 No `ring`, no OpenSSL, no `rustls` — keep the dependency tree small and audit-friendly.
 

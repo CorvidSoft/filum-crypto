@@ -1,4 +1,5 @@
 namespace filer_crypto {
+    [Throws=FilerCryptoError]
     sequence<u8> generate_master_secret();
 
     [Throws=FilerCryptoError]
