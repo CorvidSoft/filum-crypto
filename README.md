@@ -16,7 +16,14 @@ The public API is a single `Vault` type plus a few stateless functions in the `r
 
 ## Status
 
-This repository is in early development. The pure-Rust core (`crates/filer-crypto/`) is complete and tested. A placeholder `crates/filer-crypto-uniffi/` crate exists to keep the workspace resolving, but the actual UniFFI bindings, `Package.swift`, and generated Swift sources are deferred to a follow-up PR — see [docs/superpowers/plans/](docs/superpowers/plans/).
+The crate is **functionally complete** for v0.1.0:
+
+- `crates/filer-crypto/` — pure-Rust core, 38 tests passing
+- `crates/filer-crypto-uniffi/` — UniFFI binding crate
+- `Package.swift` + `Sources/FilerCrypto/` — Swift Package manifest + generated bindings
+- `Tests/FilerCryptoTests/` — Swift test target (currently a single `XCTSkip` placeholder)
+
+What's still ahead — pre-built XCFramework distribution, real Swift parity tests, Android/Wasm bindings — is tracked in [issue #3](https://github.com/CorvidSoft/filer-crypto/issues/3). Until the XCFramework lands, `swift build`/`swift test` will fail at link time; consumers wanting a working build should use the mobile app's `with-crypto-core` plugin in local-path mode.
 
 ## Building
 
@@ -25,11 +32,19 @@ cargo build --workspace
 cargo test --workspace
 ```
 
+To regenerate the Swift bindings after a UDL or binding-layer change:
+
+```bash
+./scripts/build.sh
+```
+
+This produces `Sources/FilerCrypto/FilerCrypto.swift` (and the matching `filer_cryptoFFI.h` + `.modulemap`) from the UDL definition in `crates/filer-crypto-uniffi/src/filer_crypto.udl`. The regenerated files are committed alongside the change that triggered them.
+
 ## Consuming from Swift
 
-This repo will be consumed as a Swift Package once the `Package.swift` manifest, UniFFI binding crate, and generated Swift bindings land in a follow-up PR. Right now, only the pure-Rust core is shipped — there is no SPM target to add yet.
+This repo is shaped as a Swift Package — `swift package describe` lists the `FilerCrypto` library product. SPM consumers will be able to add it as a dependency once the XCFramework release pipeline lands (see [issue #3](https://github.com/CorvidSoft/filer-crypto/issues/3)).
 
-When the binding layer ships, the mobile app will consume this repo via SPM. Its Expo config plugin (`with-crypto-core` in the closed-source Filer mobile repo) handles linking.
+The closed-source Filer mobile app consumes this repo via an Expo config plugin (`with-crypto-core`) which handles the cross-repo SPM linking.
 
 ## Architecture notes
 
