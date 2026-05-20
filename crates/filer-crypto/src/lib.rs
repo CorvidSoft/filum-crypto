@@ -8,5 +8,6 @@
 //! All other modules are crate-private.
 
 mod error;
+mod kdf;
 
 pub use error::{FilerCryptoError, Result};
