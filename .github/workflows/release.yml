@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # TEMPORARILY DISABLED for v0.1.0 checksum repair (restored in follow-up commit).
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
