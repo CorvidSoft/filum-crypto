@@ -30,3 +30,32 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  swift-tests:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build native Rust dylib + regenerate bindings
+        run: ./scripts/build.sh debug
+
+      - name: Verify committed bindings are up to date
+        run: |
+          if ! git diff --exit-code \
+                  Sources/FilerCrypto/FilerCrypto.swift \
+                  Sources/FilerCrypto/filer_cryptoFFI.h \
+                  Sources/FilerCrypto/filer_cryptoFFI.modulemap; then
+              echo "::error::Committed Swift bindings are stale." >&2
+              echo "Run ./scripts/build.sh and commit the regenerated files." >&2
+              exit 1
+          fi
+
+      - name: Swift test (local-link mode)
+        env:
+          FILER_CRYPTO_LOCAL: "1"
+        run: swift test
