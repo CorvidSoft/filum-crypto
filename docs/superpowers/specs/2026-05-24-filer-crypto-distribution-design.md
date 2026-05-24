@@ -23,7 +23,7 @@ Six tightly coupled deliverables that together unblock real-device consumption:
 
 1. **`scripts/build-xcframework.sh`** producing an XCFramework with slices for `ios-arm64` and `ios-simulator` (`arm64` + `x86_64` universal via `lipo`).
 2. **`.github/workflows/release.yml`** — on `v*` tag push: builds the XCFramework on macOS, computes sha256, creates a GitHub Release, uploads the `.zip` as an asset, emits the `.binaryTarget` snippet for the release notes.
-3. **`Package.swift` dual-mode switch** — env-var-gated. Default uses `.binaryTarget(url:, checksum:)`; `FILER_CRYPTO_LOCAL=1` uses the existing source-Swift target wired to `target/{release,debug}/libfiler_crypto.dylib`.
+3. **`Package.swift` dual-mode switch** — env-var-gated. Default uses `.binaryTarget(url:, checksum:)`; `FILER_CRYPTO_LOCAL=1` uses a source-Swift target with explicit linker settings against `target/{release,debug}/libfiler_crypto.a` (the staticlib — see §3.3 for why not the dylib).
 4. **Real Swift parity tests** replacing the `XCTSkip`: blob round-trip, metadata-field round-trip, sign+verify round-trip, BIP39 round-trip, and golden cross-language fixtures (Rust-produced envelopes decoded by Swift, with checked-in test vectors).
 5. **macOS `swift-tests` job** added to `.github/workflows/ci.yml`, running `swift test` on every PR against the local-dev mode.
 6. **`docs/VERSIONING.md`** — one-page semver policy with the explicit "envelope format or HKDF context strings = major bump" rule (CLAUDE.md invariants #7 and #8).
