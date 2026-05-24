@@ -10,7 +10,7 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/CorvidSoft/filer-crypto"
 authors = ["CorvidSoft"]
-version = "0.0.2"
+version = "0.1.0"
 
 [workspace.dependencies]
 aes-gcm = "0.10"
