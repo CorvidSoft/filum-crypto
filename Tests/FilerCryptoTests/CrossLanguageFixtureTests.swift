@@ -9,16 +9,15 @@ final class CrossLanguageFixtureTests: XCTestCase {
     private static let fixtureMasterSecret: [UInt8] = Array(repeating: 0, count: 32)
 
     private func loadFixture(_ name: String) throws -> [String: Any] {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures") else {
-            XCTFail("fixture \(name).json not found in test bundle (subdirectory: Fixtures)")
-            return [:]
-        }
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"),
+            "fixture \(name).json not found in test bundle (subdirectory: Fixtures)"
+        )
         let data = try Data(contentsOf: url)
-        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            XCTFail("fixture \(name).json is not a JSON object")
-            return [:]
-        }
-        return obj
+        return try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            "fixture \(name).json is not a JSON object"
+        )
     }
 
     private func hexDecode(_ s: String) throws -> [UInt8] {
@@ -43,12 +42,12 @@ final class CrossLanguageFixtureTests: XCTestCase {
 
     func testBlobFixtureDecrypts() throws {
         let fixture = try loadFixture("blob_v1")
-        let plaintext = try hexDecode(fixture["plaintext_hex"] as! String)
-        let blobDict = fixture["blob"] as! [String: String]
+        let plaintext = try hexDecode(try XCTUnwrap(fixture["plaintext_hex"] as? String))
+        let blobDict = try XCTUnwrap(fixture["blob"] as? [String: String])
         let blob = EncryptedBlob(
-            ciphertext: try hexDecode(blobDict["ciphertext_hex"]!),
-            iv: try hexDecode(blobDict["iv_hex"]!),
-            wrappedKey: try hexDecode(blobDict["wrapped_key_hex"]!)
+            ciphertext: try hexDecode(try XCTUnwrap(blobDict["ciphertext_hex"])),
+            iv: try hexDecode(try XCTUnwrap(blobDict["iv_hex"])),
+            wrappedKey: try hexDecode(try XCTUnwrap(blobDict["wrapped_key_hex"]))
         )
         let vault = try Vault.open(masterSecret: Self.fixtureMasterSecret)
         let recovered = try vault.decryptBlob(blob: blob)
@@ -57,11 +56,11 @@ final class CrossLanguageFixtureTests: XCTestCase {
 
     func testMetadataFixtureDecrypts() throws {
         let fixture = try loadFixture("metadata_v1")
-        let plaintext = try hexDecode(fixture["plaintext_hex"] as! String)
-        let fieldDict = fixture["field"] as! [String: String]
+        let plaintext = try hexDecode(try XCTUnwrap(fixture["plaintext_hex"] as? String))
+        let fieldDict = try XCTUnwrap(fixture["field"] as? [String: String])
         let field = EncryptedField(
-            ciphertext: try hexDecode(fieldDict["ciphertext_hex"]!),
-            iv: try hexDecode(fieldDict["iv_hex"]!)
+            ciphertext: try hexDecode(try XCTUnwrap(fieldDict["ciphertext_hex"])),
+            iv: try hexDecode(try XCTUnwrap(fieldDict["iv_hex"]))
         )
         let vault = try Vault.open(masterSecret: Self.fixtureMasterSecret)
         let recovered = try vault.decryptMetadataField(field: field)
@@ -70,9 +69,9 @@ final class CrossLanguageFixtureTests: XCTestCase {
 
     func testSignatureFixtureVerifies() throws {
         let fixture = try loadFixture("signature_v1")
-        let nonce = try hexDecode(fixture["nonce_hex"] as! String)
-        let publicKey = try hexDecode(fixture["public_key_hex"] as! String)
-        let signature = try hexDecode(fixture["signature_hex"] as! String)
+        let nonce = try hexDecode(try XCTUnwrap(fixture["nonce_hex"] as? String))
+        let publicKey = try hexDecode(try XCTUnwrap(fixture["public_key_hex"] as? String))
+        let signature = try hexDecode(try XCTUnwrap(fixture["signature_hex"] as? String))
         XCTAssertNoThrow(try verifySignature(publicKey: publicKey, nonce: nonce, signature: signature))
     }
 }
