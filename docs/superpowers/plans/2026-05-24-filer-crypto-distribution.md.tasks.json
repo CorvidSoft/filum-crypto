@@ -4,21 +4,21 @@
     {
       "id": 1,
       "subject": "Task 1: Versioning policy doc",
-      "status": "pending",
+      "status": "completed",
       "nativeTaskId": "8",
       "description": "**Goal:** Land `docs/VERSIONING.md` so the wire-format major-bump rule is canonical before any code change has a chance to violate it.\n\n**Files:**\n- Create: `docs/VERSIONING.md`\n\n**Acceptance Criteria:**\n- docs/VERSIONING.md exists\n- MAJOR/MINOR/PATCH classification with examples\n- HKDF context strings + envelope changes called out as MAJOR\n- FilerCryptoError new-variant MINOR carve-out\n- Pre-1.0 carve-out\n- 4-step release procedure\n- 'When in doubt' fixture-test pointer\n\n**Verify:** `test -f docs/VERSIONING.md && [ $(wc -l < docs/VERSIONING.md) -lt 200 ] && [ $(grep -c MAJOR docs/VERSIONING.md) -ge 6 ]`\n\n```json:metadata\n{\"files\": [\"docs/VERSIONING.md\"], \"verifyCommand\": \"test -f docs/VERSIONING.md\", \"acceptanceCriteria\": [\"docs/VERSIONING.md exists\", \"MAJOR/MINOR/PATCH classification present\"]}\n```"
     },
     {
       "id": 2,
       "subject": "Task 2: XCFramework build script + release-notes helper",
-      "status": "pending",
+      "status": "completed",
       "nativeTaskId": "9",
       "description": "**Goal:** scripts/build-xcframework.sh produces FilerCryptoFFI.xcframework.zip + sha256; scripts/release-notes.sh formats the release body with the .binaryTarget snippet.\n\n**Files:**\n- Create: scripts/build-xcframework.sh (+x)\n- Create: scripts/release-notes.sh (+x)\n- Modify: .gitignore (add build/)\n\n**Acceptance Criteria:**\n- macOS: produces XCFramework with ios-arm64 + ios-arm64_x86_64-simulator slices\n- lipo -info reports arm64+x86_64\n- Bindings drift check aborts on diff\n- release-notes.sh formats checksum line + snippet\n\n**Verify:** `./scripts/release-notes.sh deadbeef | grep -q 'checksum: \\\"deadbeef\\\"'`; on macOS also `./scripts/build-xcframework.sh && lipo -info build/ios-sim-universal/libfiler_crypto.a | grep -q 'arm64 x86_64'`\n\n```json:metadata\n{\"files\": [\"scripts/build-xcframework.sh\", \"scripts/release-notes.sh\", \".gitignore\"], \"verifyCommand\": \"./scripts/release-notes.sh deadbeef | grep -q 'checksum: \\\"deadbeef\\\"'\", \"acceptanceCriteria\": [\"XCFramework zip produced on macOS\", \"Both iOS slices present\", \"Bindings drift check active\"]}\n```"
     },
     {
       "id": 3,
       "subject": "Task 3: Release CI workflow",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [2],
       "nativeTaskId": "10",
       "description": "**Goal:** Tag-triggered .github/workflows/release.yml builds XCFramework, validates tag vs Cargo.toml workspace version, creates GitHub Release.\n\n**Files:** Create .github/workflows/release.yml\n\n**Acceptance Criteria:**\n- Triggers on v* tags\n- macos-latest, contents: write\n- Tag-version skew guard (allows -rcN suffix)\n- Invokes build-xcframework.sh\n- gh release create with zip + release-notes body\n\n**Verify:** `python3 -c \"import yaml; yaml.safe_load(open('.github/workflows/release.yml'))\"`\n\n```json:metadata\n{\"files\": [\".github/workflows/release.yml\"], \"verifyCommand\": \"python3 -c \\\"import yaml; yaml.safe_load(open('.github/workflows/release.yml'))\\\"\", \"acceptanceCriteria\": [\"Triggers on v* tags\", \"Tag-version skew guard works\"]}\n```"
@@ -26,21 +26,21 @@
     {
       "id": 4,
       "subject": "Task 4: Golden fixture generator + checked-in fixtures",
-      "status": "pending",
+      "status": "completed",
       "nativeTaskId": "11",
       "description": "**Goal:** crates/filer-crypto/tests/generate_fixtures.rs (#[ignore]-gated) produces 3 JSON fixtures committed under Tests/FilerCryptoTests/Fixtures/.\n\n**Files:**\n- Create: crates/filer-crypto/tests/generate_fixtures.rs\n- Create: Tests/FilerCryptoTests/Fixtures/{README.md, blob_v1.json, metadata_v1.json, signature_v1.json}\n- Modify: crates/filer-crypto/Cargo.toml (dev-deps: serde, serde_json, hex — latest)\n\n**Acceptance Criteria:**\n- --ignored regen writes 3 JSON files\n- cargo test --workspace still 38 passing\n- README.md documents sentinel + regen command\n\n**Verify:** `cargo test -p filer-crypto --test generate_fixtures -- --ignored --nocapture && cargo test --workspace`\n\n```json:metadata\n{\"files\": [\"crates/filer-crypto/Cargo.toml\", \"crates/filer-crypto/tests/generate_fixtures.rs\", \"Tests/FilerCryptoTests/Fixtures/README.md\", \"Tests/FilerCryptoTests/Fixtures/blob_v1.json\", \"Tests/FilerCryptoTests/Fixtures/metadata_v1.json\", \"Tests/FilerCryptoTests/Fixtures/signature_v1.json\"], \"verifyCommand\": \"cargo test -p filer-crypto --test generate_fixtures -- --ignored --nocapture && cargo test --workspace\", \"acceptanceCriteria\": [\"#[ignore] regen writes 3 JSON files\", \"cargo test --workspace still 38 passing\"]}\n```"
     },
     {
       "id": 5,
       "subject": "Task 5: Package.swift dual-mode with local-link wiring",
-      "status": "pending",
+      "status": "completed",
       "nativeTaskId": "12",
       "description": "**Goal:** Package.swift resolves into local-link mode under FILER_CRYPTO_LOCAL=1 and .binaryTarget mode otherwise (placeholders until Task 8).\n\n**Files:** Modify Package.swift\n\n**Acceptance Criteria:**\n- swift package describe parses in both modes\n- Local mode links staticlib + Security framework after scripts/build.sh debug\n- Placeholder URL contains <X.Y.Z>; placeholder checksum is 64 zeros\n\n**Verify:** `FILER_CRYPTO_LOCAL=1 swift package describe | grep -q FilerCrypto && ./scripts/build.sh debug && FILER_CRYPTO_LOCAL=1 swift build 2>&1 | tail -3 | grep -q 'Build complete'`\n\n```json:metadata\n{\"files\": [\"Package.swift\"], \"verifyCommand\": \"FILER_CRYPTO_LOCAL=1 swift package describe | grep -q FilerCrypto && ./scripts/build.sh debug && FILER_CRYPTO_LOCAL=1 swift build 2>&1 | tail -3 | grep -q 'Build complete'\", \"acceptanceCriteria\": [\"Both modes parse\", \"Local mode links successfully\"]}\n```"
     },
     {
       "id": 6,
       "subject": "Task 6: Real Swift parity tests",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [4, 5],
       "nativeTaskId": "13",
       "description": "**Goal:** Replace XCTSkip placeholder with 5 XCTestCase files covering blob/metadata/signing/recovery round-trips + CrossLanguageFixtureTests against committed JSON goldens.\n\n**Files:**\n- Delete: Tests/FilerCryptoTests/FilerCryptoTests.swift\n- Create: 5 new test files under Tests/FilerCryptoTests/\n\n**Acceptance Criteria:**\n- FILER_CRYPTO_LOCAL=1 swift test exits 0\n- 5 classes, ≥ 15 methods\n- 3 negative tests asserting FilerCryptoError variants\n- CrossLanguageFixtureTests decrypts all 3 fixtures\n- BIP39 known-answer 'abandon...art' for [0u8; 32]\n\n**Verify:** `./scripts/build.sh debug && FILER_CRYPTO_LOCAL=1 swift test 2>&1 | tail -5`\n\n```json:metadata\n{\"files\": [\"Tests/FilerCryptoTests/BlobRoundTripTests.swift\", \"Tests/FilerCryptoTests/MetadataFieldRoundTripTests.swift\", \"Tests/FilerCryptoTests/SigningTests.swift\", \"Tests/FilerCryptoTests/RecoveryPhraseTests.swift\", \"Tests/FilerCryptoTests/CrossLanguageFixtureTests.swift\"], \"verifyCommand\": \"./scripts/build.sh debug && FILER_CRYPTO_LOCAL=1 swift test 2>&1 | tail -5\", \"acceptanceCriteria\": [\"swift test passes\", \"5 test classes\", \"3 negative tests assert correct FilerCryptoError variant\", \"CrossLanguageFixtureTests passes\"]}\n```"
@@ -48,7 +48,7 @@
     {
       "id": 7,
       "subject": "Task 7: macOS swift-tests CI job",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [6],
       "nativeTaskId": "14",
       "description": "**Goal:** Add parallel macos-latest job to .github/workflows/ci.yml that runs swift test under FILER_CRYPTO_LOCAL=1 and enforces bindings-drift detection.\n\n**Files:** Modify .github/workflows/ci.yml\n\n**Acceptance Criteria:**\n- swift-tests job added (macos-latest, 20min timeout)\n- Steps: checkout, Rust, cache, build.sh debug, git diff drift check on Sources/FilerCrypto/, swift test under FILER_CRYPTO_LOCAL=1\n- Bindings drift step fails with remediation message\n- PR triggers both ubuntu and macos jobs\n\n**Verify:** `python3 -c \"import yaml; d=yaml.safe_load(open('.github/workflows/ci.yml')); assert 'swift-tests' in d['jobs']; assert d['jobs']['swift-tests']['runs-on']=='macos-latest'\"`\n\n```json:metadata\n{\"files\": [\".github/workflows/ci.yml\"], \"verifyCommand\": \"python3 -c \\\"import yaml; d=yaml.safe_load(open('.github/workflows/ci.yml')); assert 'swift-tests' in d['jobs']; assert d['jobs']['swift-tests']['runs-on']=='macos-latest'; print('OK')\\\"\", \"acceptanceCriteria\": [\"swift-tests job declared and macos-latest\", \"Bindings drift step present\", \"Final step runs FILER_CRYPTO_LOCAL=1 swift test\"]}\n```"
@@ -62,5 +62,5 @@
       "description": "**USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it 'verified inline', or by substituting a cheaper check. Close only after every item in acceptanceCriteria has been re-validated independently, with output captured.\n\n**Goal:** Cut first XCFramework release. rc1 to learn the checksum; v0.1.0 is the first real release the Filer iOS app consumes via .binaryTarget. Agent CANNOT complete the final iOS-app verification (closed-source sibling repo).\n\n**Files:** Modify Cargo.toml (version bumps), Package.swift (substitute real URL + checksum)\n\n**Acceptance Criteria:**\n- Cargo.toml workspace = 0.0.2 then 0.1.0\n- v0.0.2-rc1 + v0.1.0 GitHub Releases exist with FilerCryptoFFI.xcframework.zip\n- Package.swift checksum matches v0.1.0 published sha256\n- Scratch consumer builds against both rc1 and v0.1.0\n- Filer iOS app builds against v0.1.0 via SPM (manual)\n\n**Verify:** `gh release view v0.1.0 --json assets --jq '.assets[].name' | grep -q FilerCryptoFFI.xcframework.zip` + manual iOS-app build log\n\n```json:metadata\n{\"files\": [\"Cargo.toml\", \"Package.swift\"], \"verifyCommand\": \"gh release view v0.1.0 --json assets --jq '.assets[].name' | grep -q FilerCryptoFFI.xcframework.zip\", \"acceptanceCriteria\": [\"v0.0.2-rc1 published\", \"Package.swift checksum pinned to rc1\", \"v0.1.0 published\", \"Package.swift checksum matches v0.1.0\", \"Filer iOS app builds against v0.1.0\"], \"userGate\": true, \"tags\": [\"user-gate\"], \"requireEvidenceTokens\": [[\"v0.0.2-rc1\", \"rc1\"], [\"v0.1.0\"], [\"filer-ios\", \"consumer-build\", \"Build succeeded\", \"Build complete\"]]}\n```"
     }
   ],
-  "lastUpdated": "2026-05-24T00:00:00Z"
+  "lastUpdated": "2026-05-24T18:00:00Z"
 }
