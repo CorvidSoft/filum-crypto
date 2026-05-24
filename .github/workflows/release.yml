@@ -1,12 +1,28 @@
 name: Release
 
+# Releases are dispatched manually, NOT triggered by tag push. The workflow
+# builds the XCFramework, computes its sha256, pins Package.swift to that
+# checksum + the upcoming tag URL, commits the pin, then creates the tag
+# and publishes the GitHub Release with the artifact — all in one run.
+#
+# This guarantees the commit at the published tag always has the correct
+# Package.swift checksum for the artifact, without requiring the maintainer
+# to know the checksum ahead of time and without relying on byte-reproducible
+# builds.
+#
+# Pre-flight: bump `workspace.package.version` in Cargo.toml on main via a
+# normal PR, then trigger this workflow with `version:` matching that bump.
+
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.1.1) — must match Cargo.toml workspace version'
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -17,24 +33,46 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Add iOS Rust targets
-        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
-
-      - name: Verify tag matches workspace version
+      - name: Verify workflow was dispatched from main
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          # Allow -rcN suffix on the tag, matched against the base workspace version.
-          tag_base="${tag%-rc*}"
-          ws=$(awk -F'"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [ "$tag_base" != "$ws" ]; then
-              echo "Tag $GITHUB_REF_NAME (base $tag_base) != workspace version $ws" >&2
+          if [ "${{ github.ref_type }}" != "branch" ] || [ "${{ github.ref_name }}" != "main" ]; then
+              echo "::error::Release workflow must be dispatched from the 'main' branch (ref_type=${{ github.ref_type }}, ref_name=${{ github.ref_name }})."
               exit 1
           fi
+
+      - name: Verify input version matches Cargo.toml
+        run: |
+          requested="${{ inputs.version }}"
+          ws=$(awk -F'"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [ "$requested" != "$ws" ]; then
+              echo "::error::Input version $requested != Cargo.toml workspace version $ws"
+              echo "Bump Cargo.toml on main first, then re-trigger this workflow."
+              exit 1
+          fi
+
+      - name: Verify tag does not already exist
+        run: |
+          # Use --verify with the full refs/tags/ path so a branch
+          # accidentally named v<X.Y.Z> doesn't trigger a false positive.
+          if git rev-parse --verify --quiet "refs/tags/v${{ inputs.version }}" >/dev/null; then
+              echo "::error::Tag v${{ inputs.version }} already exists locally. Pick a new version."
+              exit 1
+          fi
+          # Also check the remote in case the local clone is missing the tag.
+          if git ls-remote --tags --exit-code origin "refs/tags/v${{ inputs.version }}" >/dev/null 2>&1; then
+              echo "::error::Tag v${{ inputs.version }} already exists on origin. Pick a new version."
+              exit 1
+          fi
+
+      - name: Add iOS Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Build XCFramework
         run: ./scripts/build-xcframework.sh
@@ -46,11 +84,55 @@ jobs:
           echo "sha256=$sha" >> "$GITHUB_OUTPUT"
           echo "Computed sha256: $sha"
 
-      - name: Create release
+      - name: Pin Package.swift to this build's URL + checksum
+        run: |
+          version="${{ inputs.version }}"
+          sha="${{ steps.sum.outputs.sha256 }}"
+          # Update both the .binaryTarget URL (to point at the upcoming tag)
+          # and the checksum (to the value we just computed). Match the
+          # existing URL/checksum patterns; they may be either real values
+          # from a previous release or placeholders (v<X.Y.Z> + 64 zeros).
+          sed -i.bak -E \
+              -e "s|releases/download/v[^/]+/FilerCryptoFFI\.xcframework\.zip|releases/download/v$version/FilerCryptoFFI.xcframework.zip|" \
+              -e "s|(checksum: \")[a-fA-F0-9]{64}(\")|\\1$sha\\2|" \
+              Package.swift
+          rm Package.swift.bak
+          # Sanity check: confirm the substitutions actually landed.
+          grep -q "download/v$version/" Package.swift || { echo "::error::URL substitution failed"; exit 1; }
+          grep -q "$sha" Package.swift || { echo "::error::Checksum substitution failed"; exit 1; }
+          echo "Updated Package.swift:"
+          grep -E "url:|checksum:" Package.swift
+
+      - name: Commit pinned Package.swift, tag, and push
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          version="${{ inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "chore: release v$version
+
+          Auto-generated by .github/workflows/release.yml on workflow_dispatch.
+          Pins Package.swift to the XCFramework artifact built in this run."
+          git tag "v$version"
+          # Push the commit and tag together. The tag points at the commit
+          # whose Package.swift has the matching checksum. The main-branch
+          # guard at the top of the job ensures HEAD is at main.
+          git push origin HEAD:main
+          git push origin "v$version"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # release-notes.sh reads $GITHUB_REF_NAME to construct the
+          # release URL. On workflow_dispatch, the default value is the
+          # branch name ('main') — override it to the tag we just created
+          # so the script emits the correct .binaryTarget snippet.
+          GITHUB_REF_NAME: "v${{ inputs.version }}"
+        run: |
+          version="${{ inputs.version }}"
+          gh release create "v$version" \
               build/FilerCryptoFFI.xcframework.zip \
-              --title "$GITHUB_REF_NAME" \
+              --title "v$version" \
               --notes "$(./scripts/release-notes.sh ${{ steps.sum.outputs.sha256 }})"

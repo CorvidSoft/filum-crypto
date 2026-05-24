@@ -55,17 +55,58 @@ compatibility yet."
 
 ## Release procedure
 
-1. Bump `workspace.package.version` in `Cargo.toml`.
-2. Update `Package.swift`: `url:` to the new tag, `checksum:` to the
-   expected sha256. The first release uses a `-rc1` tag to learn the
-   actual checksum; subsequent releases compute it locally first by
-   running `./scripts/build-xcframework.sh` and reading the output.
-3. Commit (`chore: release v<X.Y.Z>`), tag (`git tag v<X.Y.Z>`), push the
-   tag. CI builds the XCFramework on macOS, computes the checksum,
-   creates the GitHub Release, and uploads the asset.
-4. If the post-publish checksum doesn't match what's in `Package.swift`,
-   delete the tag (`git push --delete origin v<X.Y.Z>`) and release
-   (`gh release delete v<X.Y.Z>`), fix the checksum, re-tag.
+Releases are dispatched via GitHub Actions. The workflow builds the
+XCFramework, computes the sha256, pins `Package.swift` to that value,
+commits the pin, creates the tag, and publishes the GitHub Release —
+all in one atomic run. The maintainer never touches `Package.swift`'s
+URL or checksum directly; the tag always points at a commit whose
+`Package.swift` matches the published artifact.
+
+1. Open a PR that bumps `workspace.package.version` in `Cargo.toml`.
+   Get it merged to `main`.
+2. In the GitHub UI: **Actions → Release → Run workflow**. Enter the
+   version (e.g. `0.1.1`) matching the `Cargo.toml` you just merged.
+3. Wait for the workflow to complete (~10 min). It will:
+   - Verify the input version matches `Cargo.toml`.
+   - Verify the tag doesn't already exist.
+   - Build the XCFramework on `macos-latest`.
+   - Compute the sha256.
+   - Update `Package.swift`'s `.binaryTarget` URL + checksum.
+   - Commit (`chore: release v<X.Y.Z>`) to `main`.
+   - Tag the commit and push.
+   - Create the GitHub Release with the artifact.
+
+### Why this flow
+
+The XCFramework build is not byte-reproducible across CI runs (zip
+embeds file mtimes that differ each checkout, xcodebuild's `Info.plist`
+includes per-build metadata). That makes the "pre-compute the
+checksum locally, embed it, tag, push" pattern unreliable — CI's
+rebuild produces a different sha than the local pre-compute, and the
+tag ends up with a Package.swift checksum that doesn't match the
+published artifact.
+
+By inverting the order — build first, then pin Package.swift to the
+artifact's actual sha, then tag — the chicken-and-egg goes away
+entirely.
+
+### If the workflow fails partway through
+
+The workflow runner is ephemeral, so only state pushed to `origin`
+persists. The recovery table describes the **remote** state after each
+failure point.
+
+| Failed at | Remote state | Recovery |
+|---|---|---|
+| Build / checksum | No commit, no tag, no release published | Re-run the workflow |
+| `git push origin HEAD:main` | No commit, no tag, no release published | Re-run; idempotent |
+| `git push origin v<X.Y.Z>` | Pin commit on `main`, no tag, no release | Manually `git tag v<X.Y.Z> <pin-commit-sha>` and `git push origin v<X.Y.Z>`, then `gh release create v<X.Y.Z> --notes ...` with the artifact rebuilt locally, OR revert the pin commit and re-run the workflow |
+| `gh release create` | Pin commit on `main`, tag exists, no release | Manually `gh release create v<X.Y.Z> build/...zip --notes "$(./scripts/release-notes.sh <sha256>)"` with a locally rebuilt artifact |
+
+Branch-protection caveat: if `main` requires PR review, the workflow's
+direct push will fail. Either configure the GitHub Actions bot to
+bypass branch protection for this workflow, or move releases to a
+dedicated `releases/*` branch.
 
 ## When in doubt
 
