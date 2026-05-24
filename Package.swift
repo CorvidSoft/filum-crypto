@@ -38,7 +38,9 @@ let pkgRoot = URL(fileURLWithPath: #file).deletingLastPathComponent().path
 let localSwiftSettings: [SwiftSetting] = [
     .unsafeFlags([
         "-Xcc", "-fmodule-map-file=\(pkgRoot)/Sources/FilerCrypto/filer_cryptoFFI.modulemap",
-        "-I", "\(pkgRoot)/Sources/FilerCrypto",
+        // Use -Ipath (no space) so SPM can't inject flags between -I and the path
+        // when composing the FilerCryptoPackageTests runner command (Swift 6.3+ issue).
+        "-I\(pkgRoot)/Sources/FilerCrypto",
     ]),
 ]
 
