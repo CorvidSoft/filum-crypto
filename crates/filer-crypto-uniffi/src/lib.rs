@@ -20,8 +20,8 @@
 //! the heap allocation wipes on drop regardless of return path.
 
 use filer_crypto::{
-    recovery, DeviceSignature as CoreDeviceSignature, EncryptedBlob as CoreEncryptedBlob,
-    EncryptedField as CoreEncryptedField, FilerCryptoError as CoreError, Vault as CoreVault,
+    recovery, DeviceSignature as CoreDeviceSignature, EncryptedField as CoreEncryptedField,
+    FilerCryptoError as CoreError, Vault as CoreVault,
 };
 use zeroize::Zeroizing;
 
@@ -47,6 +47,8 @@ pub enum FilerCryptoError {
     InvalidSignature,
     #[error("randomness source unavailable")]
     Randomness,
+    #[error("I/O error")]
+    Io,
 }
 
 impl From<CoreError> for FilerCryptoError {
@@ -57,6 +59,7 @@ impl From<CoreError> for FilerCryptoError {
             CoreError::InvalidKeyLength => Self::InvalidKeyLength,
             CoreError::InvalidSignature => Self::InvalidSignature,
             CoreError::Randomness => Self::Randomness,
+            CoreError::Io => Self::Io,
         }
     }
 }
@@ -65,41 +68,10 @@ type Result<T> = std::result::Result<T, FilerCryptoError>;
 
 // ---- Dictionary types -------------------------------------------------
 //
-// EncryptedBlob, EncryptedField, DeviceSignature are declared here so that
+// EncryptedField and DeviceSignature are declared here so that
 // include_scaffolding! can apply udl_derive(Record) to the local names.
 // We keep the iv field as Vec<u8> at the FFI boundary (UDL bytes)
 // and validate the fixed 12-byte length when converting back to core types.
-
-#[derive(Debug, Clone)]
-pub struct EncryptedBlob {
-    pub ciphertext: Vec<u8>,
-    pub iv: Vec<u8>,
-    pub wrapped_key: Vec<u8>,
-}
-
-impl From<CoreEncryptedBlob> for EncryptedBlob {
-    fn from(b: CoreEncryptedBlob) -> Self {
-        Self {
-            ciphertext: b.ciphertext,
-            iv: b.iv.to_vec(),
-            wrapped_key: b.wrapped_key,
-        }
-    }
-}
-
-impl TryFrom<EncryptedBlob> for CoreEncryptedBlob {
-    type Error = FilerCryptoError;
-    fn try_from(b: EncryptedBlob) -> Result<Self> {
-        let iv: [u8; 12] =
-            b.iv.try_into()
-                .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
-        Ok(CoreEncryptedBlob {
-            ciphertext: b.ciphertext,
-            iv,
-            wrapped_key: b.wrapped_key,
-        })
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct EncryptedField {
@@ -223,19 +195,24 @@ impl Vault {
         Ok(Self { inner: core })
     }
 
-    pub fn encrypt_blob(&self, plaintext: Vec<u8>) -> Result<EncryptedBlob> {
-        let core_blob = self
-            .inner
-            .encrypt_blob(&plaintext)
-            .map_err(FilerCryptoError::from)?;
-        Ok(core_blob.into())
+    pub fn encrypt_blob(&self, plaintext: Vec<u8>) -> Result<Vec<u8>> {
+        self.inner.encrypt_blob(&plaintext).map_err(Into::into)
     }
 
-    pub fn decrypt_blob(&self, blob: EncryptedBlob) -> Result<Vec<u8>> {
-        let core_blob: CoreEncryptedBlob = blob.try_into()?;
+    pub fn decrypt_blob(&self, framed: Vec<u8>) -> Result<Vec<u8>> {
+        self.inner.decrypt_blob(&framed).map_err(Into::into)
+    }
+
+    pub fn encrypt_file_to_blob(&self, in_path: String, out_path: String) -> Result<()> {
         self.inner
-            .decrypt_blob(&core_blob)
-            .map_err(FilerCryptoError::from)
+            .encrypt_file_to_blob(&in_path, &out_path)
+            .map_err(Into::into)
+    }
+
+    pub fn decrypt_blob_to_file(&self, in_path: String, out_path: String) -> Result<()> {
+        self.inner
+            .decrypt_blob_to_file(&in_path, &out_path)
+            .map_err(Into::into)
     }
 
     pub fn encrypt_metadata_field(&self, plaintext: Vec<u8>) -> Result<EncryptedField> {

@@ -1,27 +1,17 @@
-//! AES-256-GCM blob encryption.
+//! AES-256-GCM chunked blob encryption.
 //!
-//! Two codecs live here:
+//! The **chunked STREAM codec** (`encrypt_chunked` / `decrypt_chunked` plus the
+//! file-streaming `encrypt_file_chunked` / `decrypt_file_chunked`) is the only
+//! blob format the app ships. It uses the audited `aead::stream` STREAM
+//! construction (`EncryptorBE32` / `DecryptorBE32`) so decryption processes one
+//! ~1 MiB chunk at a time — bounded memory, which the iOS FileProvider
+//! extension (hard 20 MB limit) requires. A random per-blob 32-byte data key is
+//! wrapped under the vault wrapping key and carried in a fixed 72-byte header.
 //!
-//! 1. **Chunked STREAM codec** (`encrypt_chunked` / `decrypt_chunked` plus the
-//!    file-streaming `encrypt_file_chunked` / `decrypt_file_chunked`). This is
-//!    the format the app ships. It uses the audited `aead::stream` STREAM
-//!    construction (`EncryptorBE32` / `DecryptorBE32`) so decryption processes
-//!    one ~1 MiB chunk at a time — bounded memory, which the iOS FileProvider
-//!    extension (hard 20 MB limit) requires. A random per-blob 32-byte data key
-//!    is wrapped under the vault wrapping key and carried in a fixed 72-byte
-//!    header.
-//!
-//!    Header layout (72 bytes): version `u8` = 1, then a 60-byte wrapped data
-//!    key, then a 7-byte nonce prefix, then `chunk_size` as a big-endian `u32`.
-//!    Body: a sequence of STREAM segments; every segment but the last is
-//!    `chunk_size + 16` bytes (chunk + GCM tag), the last is `<= chunk_size + 16`.
-//!
-//! 2. **Single-seal codec** (`encrypt_with_key_wrapping` /
-//!    `decrypt_with_key_wrapping` and the `EncryptedBlob` envelope). This is the
-//!    legacy one-shot format still consumed by `Vault::encrypt_blob` /
-//!    `decrypt_blob`. It is retained only because `vault.rs` (and, through it,
-//!    the uniffi crate / UDL) still depend on it; rewiring those onto the
-//!    chunked codec and removing this section is the follow-up task.
+//! Header layout (72 bytes): version `u8` = 1, then a 60-byte wrapped data key,
+//! then a 7-byte nonce prefix, then `chunk_size` as a big-endian `u32`. Body: a
+//! sequence of STREAM segments; every segment but the last is `chunk_size + 16`
+//! bytes (chunk + GCM tag), the last is `<= chunk_size + 16`.
 
 use aes_gcm::aead::stream::{DecryptorBE32, EncryptorBE32};
 use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
@@ -31,10 +21,6 @@ use std::path::Path;
 use zeroize::Zeroizing;
 
 use crate::error::{FilerCryptoError, Result};
-
-// ===========================================================================
-// Chunked STREAM codec
-// ===========================================================================
 
 const VERSION: u8 = 1;
 /// `wrap_iv` (12 bytes) || AES-256-GCM(wrapping_key, wrap_iv, 32-byte data_key)
@@ -311,103 +297,9 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     Ok(())
 }
 
-// ===========================================================================
-// Single-seal codec (legacy; retained for vault.rs / uniffi until rewired)
-// ===========================================================================
-
-/// The encrypted-blob envelope as returned by the crate. Structurally mirrors
-/// the `@filer/protocol`'s `EncryptedBlobUpload` shape on the TypeScript side.
-#[derive(Debug, Clone)]
-pub struct EncryptedBlob {
-    pub ciphertext: Vec<u8>,
-    pub iv: [u8; 12],
-    /// 12-byte IV || AES-256-GCM ciphertext+tag of the 32-byte data key.
-    pub wrapped_key: Vec<u8>,
-}
-
-pub(crate) fn encrypt_with_key_wrapping(
-    plaintext: &[u8],
-    wrapping_key: &[u8; 32],
-) -> Result<EncryptedBlob> {
-    // 1. Fresh random per-blob data key + IV
-    let mut data_key = Zeroizing::new([0u8; 32]);
-    OsRng
-        .try_fill_bytes(&mut data_key[..])
-        .map_err(|_| FilerCryptoError::Randomness)?;
-    let mut iv = [0u8; 12];
-    OsRng
-        .try_fill_bytes(&mut iv)
-        .map_err(|_| FilerCryptoError::Randomness)?;
-
-    // 2. Encrypt plaintext with the data key
-    let cipher = Aes256Gcm::new((&*data_key).into());
-    let ciphertext = cipher
-        .encrypt(&iv.into(), plaintext)
-        .map_err(|_| FilerCryptoError::Aead)?;
-
-    // 3. Wrap the data key with the wrapping key (also AES-256-GCM)
-    let mut wrap_iv = [0u8; 12];
-    OsRng
-        .try_fill_bytes(&mut wrap_iv)
-        .map_err(|_| FilerCryptoError::Randomness)?;
-    let wrapper = Aes256Gcm::new(wrapping_key.into());
-    let wrapped_key_ct = wrapper
-        .encrypt(&wrap_iv.into(), data_key.as_slice())
-        .map_err(|_| FilerCryptoError::Aead)?;
-
-    // Wrapped key layout: iv (12 bytes) || ciphertext+tag
-    let mut wrapped_key = Vec::with_capacity(12 + wrapped_key_ct.len());
-    wrapped_key.extend_from_slice(&wrap_iv);
-    wrapped_key.extend_from_slice(&wrapped_key_ct);
-
-    // data_key is zeroized on Drop via Zeroizing<[u8; 32]>
-
-    Ok(EncryptedBlob {
-        ciphertext,
-        iv,
-        wrapped_key,
-    })
-}
-
-pub(crate) fn decrypt_with_key_wrapping(
-    blob: &EncryptedBlob,
-    wrapping_key: &[u8; 32],
-) -> Result<Vec<u8>> {
-    if blob.wrapped_key.len() < 12 {
-        return Err(FilerCryptoError::Aead);
-    }
-    // Unwrap the data key
-    let (wrap_iv_bytes, wrapped_ct) = blob.wrapped_key.split_at(12);
-    let mut wrap_iv = [0u8; 12];
-    wrap_iv.copy_from_slice(wrap_iv_bytes);
-
-    let wrapper = Aes256Gcm::new(wrapping_key.into());
-    let data_key_vec = Zeroizing::new(
-        wrapper
-            .decrypt(&wrap_iv.into(), wrapped_ct)
-            .map_err(|_| FilerCryptoError::Aead)?,
-    );
-
-    if data_key_vec.len() != 32 {
-        return Err(FilerCryptoError::Aead);
-    }
-    let mut data_key = Zeroizing::new([0u8; 32]);
-    data_key.copy_from_slice(&data_key_vec);
-    // data_key_vec is zeroized on Drop via Zeroizing<Vec<u8>>
-
-    // Decrypt the payload
-    let cipher = Aes256Gcm::new((&*data_key).into());
-    cipher
-        .decrypt(&blob.iv.into(), blob.ciphertext.as_slice())
-        .map_err(|_| FilerCryptoError::Aead)
-    // data_key is zeroized on Drop via Zeroizing<[u8; 32]>
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ---- Chunked STREAM codec ----------------------------------------
 
     const SIZES: &[usize] = &[
         0,
@@ -536,89 +428,6 @@ mod tests {
         let key2 = [43u8; 32];
         let framed = encrypt_chunked(b"some data", &key1).unwrap();
         let result = decrypt_chunked(&framed, &key2);
-        assert!(matches!(result, Err(FilerCryptoError::Aead)));
-    }
-
-    // ---- Single-seal codec (legacy) ----------------------------------
-
-    #[test]
-    fn round_trip_blob() {
-        let wrapping_key = [42u8; 32];
-        let plaintext = b"hello world";
-        let blob = encrypt_with_key_wrapping(plaintext, &wrapping_key).unwrap();
-        let recovered = decrypt_with_key_wrapping(&blob, &wrapping_key).unwrap();
-        assert_eq!(recovered, plaintext);
-    }
-
-    #[test]
-    fn round_trip_empty_blob() {
-        let wrapping_key = [42u8; 32];
-        let blob = encrypt_with_key_wrapping(&[], &wrapping_key).unwrap();
-        let recovered = decrypt_with_key_wrapping(&blob, &wrapping_key).unwrap();
-        assert!(recovered.is_empty());
-    }
-
-    #[test]
-    fn round_trip_large_blob() {
-        let wrapping_key = [42u8; 32];
-        let plaintext = vec![7u8; 1024 * 1024]; // 1 MiB
-        let blob = encrypt_with_key_wrapping(&plaintext, &wrapping_key).unwrap();
-        let recovered = decrypt_with_key_wrapping(&blob, &wrapping_key).unwrap();
-        assert_eq!(recovered, plaintext);
-    }
-
-    #[test]
-    fn wrong_wrapping_key_fails() {
-        let key1 = [42u8; 32];
-        let key2 = [43u8; 32];
-        let blob = encrypt_with_key_wrapping(b"data", &key1).unwrap();
-        let result = decrypt_with_key_wrapping(&blob, &key2);
-        assert!(matches!(result, Err(FilerCryptoError::Aead)));
-    }
-
-    #[test]
-    fn tampered_ciphertext_fails() {
-        let key = [42u8; 32];
-        let mut blob = encrypt_with_key_wrapping(b"data", &key).unwrap();
-        blob.ciphertext[0] ^= 1;
-        let result = decrypt_with_key_wrapping(&blob, &key);
-        assert!(matches!(result, Err(FilerCryptoError::Aead)));
-    }
-
-    #[test]
-    fn tampered_wrapped_key_fails() {
-        let key = [42u8; 32];
-        let mut blob = encrypt_with_key_wrapping(b"data", &key).unwrap();
-        blob.wrapped_key[15] ^= 1; // flip a bit in the wrapped-key ciphertext
-        let result = decrypt_with_key_wrapping(&blob, &key);
-        assert!(matches!(result, Err(FilerCryptoError::Aead)));
-    }
-
-    #[test]
-    fn iv_and_data_key_are_fresh_per_encryption() {
-        // Defense against accidental IV/key caching: each encryption MUST pull
-        // fresh randomness for the data key and both IVs. A refactor that
-        // memoized any of these would produce identical envelopes here and
-        // catastrophically break the AES-GCM contract.
-        //
-        // Technically probabilistic — the test would pass falsely if OsRng
-        // returned the same 12-byte IV twice in a row (collision probability
-        // 2^-96) — but that's well below the cosmic-ray bit-flip threshold
-        // and not worth defending against with an injected RNG.
-        let key = [42u8; 32];
-        let a = encrypt_with_key_wrapping(b"same", &key).unwrap();
-        let b = encrypt_with_key_wrapping(b"same", &key).unwrap();
-        assert_ne!(a.ciphertext, b.ciphertext);
-        assert_ne!(a.iv, b.iv);
-        assert_ne!(a.wrapped_key, b.wrapped_key);
-    }
-
-    #[test]
-    fn truncated_wrapped_key_fails() {
-        let key = [42u8; 32];
-        let mut blob = encrypt_with_key_wrapping(b"data", &key).unwrap();
-        blob.wrapped_key.truncate(5); // shorter than 12-byte IV
-        let result = decrypt_with_key_wrapping(&blob, &key);
         assert!(matches!(result, Err(FilerCryptoError::Aead)));
     }
 

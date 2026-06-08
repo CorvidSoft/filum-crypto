@@ -8,12 +8,13 @@
 //! Uses an all-zero master secret — the standard "obvious test vector"
 //! sentinel. Never use this secret for real keys.
 //!
-//! Blob / metadata fixtures use random IVs and per-blob data keys, so
+//! Blob / metadata fixtures use random nonces and per-blob data keys, so
 //! they will differ byte-for-byte across regenerations. That's fine —
 //! the property they encode is "Rust-produced envelope decrypts in
 //! Swift", not "byte-identical regeneration." If the wire format ever
 //! changes, the OLD committed bytes fail to decrypt and the parity test
-//! suite goes red.
+//! suite goes red. The blob fixture stores the full framed bytes of the
+//! chunked codec; Swift asserts `decryptBlob(framed:)` returns the plaintext.
 //!
 //! The signature fixture IS byte-identical across runs because ed25519
 //! is deterministic given the same key + nonce.
@@ -30,14 +31,8 @@ const FIXTURE_MASTER_SECRET: [u8; 32] = [0u8; 32];
 struct BlobFixture {
     note: &'static str,
     plaintext_hex: String,
-    blob: BlobBytes,
-}
-
-#[derive(Serialize)]
-struct BlobBytes {
-    ciphertext_hex: String,
-    iv_hex: String,
-    wrapped_key_hex: String,
+    /// Full framed bytes of the chunked STREAM codec (72-byte header + body).
+    framed_hex: String,
 }
 
 #[derive(Serialize)]
@@ -87,20 +82,16 @@ fn regenerate_fixtures() {
 
     // --- Blob fixture ---
     let blob_plaintext = b"filer-crypto v1 blob fixture".to_vec();
-    let blob = vault.encrypt_blob(&blob_plaintext).expect("encrypt blob");
+    let framed = vault.encrypt_blob(&blob_plaintext).expect("encrypt blob");
     // Round-trip check before we commit the bytes.
-    let recovered = vault.decrypt_blob(&blob).expect("decrypt blob");
+    let recovered = vault.decrypt_blob(&framed).expect("decrypt blob");
     assert_eq!(recovered, blob_plaintext);
     write_json(
         dir.join("blob_v1.json"),
         &BlobFixture {
             note: "Rust-produced golden. Decrypt with master_secret = [0u8; 32].",
             plaintext_hex: hex::encode(&blob_plaintext),
-            blob: BlobBytes {
-                ciphertext_hex: hex::encode(&blob.ciphertext),
-                iv_hex: hex::encode(blob.iv),
-                wrapped_key_hex: hex::encode(&blob.wrapped_key),
-            },
+            framed_hex: hex::encode(&framed),
         },
     );
 

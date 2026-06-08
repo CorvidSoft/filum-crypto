@@ -2,7 +2,7 @@
   "note": "Rust-produced golden. Decrypt with master_secret = [0u8; 32].",
   "plaintext_hex": "66696c65722d63727970746f207631206d657461646174612066697874757265",
   "field": {
-    "ciphertext_hex": "700f952399a174a4879dfe1ce7eafef982dace483e30f78455e03b9a2df0a614477e355fd43a523ff84dfd6801ccfb3d",
-    "iv_hex": "d5f23ec23c8659e9573d86bd"
+    "ciphertext_hex": "c98b16e7113a876de7d56f10bacade4b77b510182265a11ad802ac193a4bce37160269a45de474d732f32d96080d1555",
+    "iv_hex": "429d560fb7be3f0c8bb40728"
   }
 }

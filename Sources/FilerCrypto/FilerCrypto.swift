@@ -496,13 +496,17 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 public protocol VaultProtocol: AnyObject, Sendable {
     
-    func decryptBlob(blob: EncryptedBlob) throws  -> Data
+    func decryptBlob(framed: Data) throws  -> Data
+    
+    func decryptBlobToFile(inPath: String, outPath: String) throws 
     
     func decryptMetadataField(field: EncryptedField) throws  -> Data
     
     func devicePublicKey()  -> [UInt8]
     
-    func encryptBlob(plaintext: Data) throws  -> EncryptedBlob
+    func encryptBlob(plaintext: Data) throws  -> Data
+    
+    func encryptFileToBlob(inPath: String, outPath: String) throws 
     
     func encryptMetadataField(plaintext: Data) throws  -> EncryptedField
     
@@ -578,13 +582,22 @@ public static func `open`(masterSecret: [UInt8])throws  -> Vault  {
     
 
     
-open func decryptBlob(blob: EncryptedBlob)throws  -> Data  {
+open func decryptBlob(framed: Data)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
     uniffi_filer_crypto_fn_method_vault_decrypt_blob(
             self.uniffiCloneHandle(),
-        FfiConverterTypeEncryptedBlob_lower(blob),$0
+        FfiConverterData.lower(framed),$0
     )
 })
+}
+    
+open func decryptBlobToFile(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
+    uniffi_filer_crypto_fn_method_vault_decrypt_blob_to_file(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(inPath),
+        FfiConverterString.lower(outPath),$0
+    )
+}
 }
     
 open func decryptMetadataField(field: EncryptedField)throws  -> Data  {
@@ -604,13 +617,22 @@ open func devicePublicKey() -> [UInt8]  {
 })
 }
     
-open func encryptBlob(plaintext: Data)throws  -> EncryptedBlob  {
-    return try  FfiConverterTypeEncryptedBlob_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
+open func encryptBlob(plaintext: Data)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
     uniffi_filer_crypto_fn_method_vault_encrypt_blob(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(plaintext),$0
     )
 })
+}
+    
+open func encryptFileToBlob(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
+    uniffi_filer_crypto_fn_method_vault_encrypt_file_to_blob(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(inPath),
+        FfiConverterString.lower(outPath),$0
+    )
+}
 }
     
 open func encryptMetadataField(plaintext: Data)throws  -> EncryptedField  {
@@ -729,64 +751,6 @@ public func FfiConverterTypeDeviceSignature_lower(_ value: DeviceSignature) -> R
 }
 
 
-public struct EncryptedBlob: Equatable, Hashable {
-    public var ciphertext: Data
-    public var iv: Data
-    public var wrappedKey: Data
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(ciphertext: Data, iv: Data, wrappedKey: Data) {
-        self.ciphertext = ciphertext
-        self.iv = iv
-        self.wrappedKey = wrappedKey
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EncryptedBlob: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEncryptedBlob: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EncryptedBlob {
-        return
-            try EncryptedBlob(
-                ciphertext: FfiConverterData.read(from: &buf), 
-                iv: FfiConverterData.read(from: &buf), 
-                wrappedKey: FfiConverterData.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EncryptedBlob, into buf: inout [UInt8]) {
-        FfiConverterData.write(value.ciphertext, into: &buf)
-        FfiConverterData.write(value.iv, into: &buf)
-        FfiConverterData.write(value.wrappedKey, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEncryptedBlob_lift(_ buf: RustBuffer) throws -> EncryptedBlob {
-    return try FfiConverterTypeEncryptedBlob.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEncryptedBlob_lower(_ value: EncryptedBlob) -> RustBuffer {
-    return FfiConverterTypeEncryptedBlob.lower(value)
-}
-
-
 public struct EncryptedField: Equatable, Hashable {
     public var ciphertext: Data
     public var iv: Data
@@ -855,6 +819,8 @@ public enum FilerCryptoError: Swift.Error, Equatable, Hashable, Foundation.Local
     
     case Randomness(message: String)
     
+    case Io(message: String)
+    
 
     
 
@@ -904,6 +870,10 @@ public struct FfiConverterTypeFilerCryptoError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
+        case 6: return .Io(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -925,6 +895,8 @@ public struct FfiConverterTypeFilerCryptoError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
         case .Randomness(_ /* message is ignored*/):
             writeInt(&buf, Int32(5))
+        case .Io(_ /* message is ignored*/):
+            writeInt(&buf, Int32(6))
 
         
         }
@@ -1026,7 +998,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_filer_crypto_checksum_func_verify_signature() != 24370) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob() != 38774) {
+    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob() != 32882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob_to_file() != 27662) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filer_crypto_checksum_method_vault_decrypt_metadata_field() != 35262) {
@@ -1035,7 +1010,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_filer_crypto_checksum_method_vault_device_public_key() != 43615) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_blob() != 28334) {
+    if (uniffi_filer_crypto_checksum_method_vault_encrypt_blob() != 44355) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_filer_crypto_checksum_method_vault_encrypt_file_to_blob() != 8057) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filer_crypto_checksum_method_vault_encrypt_metadata_field() != 12280) {

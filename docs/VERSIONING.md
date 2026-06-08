@@ -12,8 +12,9 @@ is the entire reason MAJOR exists in this crate.
 
 ### MAJOR — existing vaults stop decrypting
 
-- Envelope struct changes: field name / order / length in `EncryptedBlob`,
-  `EncryptedField`, or `DeviceSignature`.
+- Envelope changes: the chunked blob header layout (version byte, wrapped-key,
+  nonce prefix, chunk size — see `blob.rs`) or its STREAM chunking, or field
+  name / order / length in `EncryptedField` or `DeviceSignature`.
 - Wrapped-key layout change (currently `IV(12) || GCM ciphertext+tag`).
 - HKDF context strings (`WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs`).
   The `v1` in `filer-crypto/v1/...` exists so that v2 context strings can

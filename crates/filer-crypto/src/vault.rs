@@ -19,7 +19,7 @@ use ed25519_dalek::SigningKey;
 use zeroize::Zeroizing;
 
 use crate::auth::{self, DeviceSignature};
-use crate::blob::{self, EncryptedBlob};
+use crate::blob;
 use crate::error::Result;
 use crate::kdf::{self, METADATA_CTX, SIGN_CTX, WRAP_CTX};
 use crate::metadata::{self, EncryptedField};
@@ -60,12 +60,20 @@ impl Vault {
         Self::open(&secret)
     }
 
-    pub fn encrypt_blob(&self, plaintext: &[u8]) -> Result<EncryptedBlob> {
-        blob::encrypt_with_key_wrapping(plaintext, &self.wrap_key)
+    pub fn encrypt_blob(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
+        blob::encrypt_chunked(plaintext, &self.wrap_key)
     }
 
-    pub fn decrypt_blob(&self, blob: &EncryptedBlob) -> Result<Vec<u8>> {
-        blob::decrypt_with_key_wrapping(blob, &self.wrap_key)
+    pub fn decrypt_blob(&self, framed: &[u8]) -> Result<Vec<u8>> {
+        blob::decrypt_chunked(framed, &self.wrap_key)
+    }
+
+    pub fn encrypt_file_to_blob(&self, in_path: &str, out_path: &str) -> Result<()> {
+        blob::encrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key)
+    }
+
+    pub fn decrypt_blob_to_file(&self, in_path: &str, out_path: &str) -> Result<()> {
+        blob::decrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key)
     }
 
     pub fn encrypt_metadata_field(&self, plaintext: &[u8]) -> Result<EncryptedField> {
@@ -94,8 +102,8 @@ mod tests {
     fn vault_blob_round_trip() {
         let secret = [42u8; 32];
         let vault = Vault::open(&secret).unwrap();
-        let blob = vault.encrypt_blob(b"hello").unwrap();
-        let recovered = vault.decrypt_blob(&blob).unwrap();
+        let framed = vault.encrypt_blob(b"hello").unwrap();
+        let recovered = vault.decrypt_blob(&framed).unwrap();
         assert_eq!(recovered, b"hello");
     }
 
@@ -135,12 +143,12 @@ mod tests {
     #[test]
     fn blob_encrypted_by_one_vault_decrypts_with_same_secret() {
         let secret = [42u8; 32];
-        let blob = {
+        let framed = {
             let v = Vault::open(&secret).unwrap();
             v.encrypt_blob(b"persistent").unwrap()
         };
         let v2 = Vault::open(&secret).unwrap();
-        assert_eq!(v2.decrypt_blob(&blob).unwrap(), b"persistent");
+        assert_eq!(v2.decrypt_blob(&framed).unwrap(), b"persistent");
     }
 
     #[test]
@@ -170,8 +178,8 @@ mod tests {
         let vault_a = Vault::open(&secret_a).unwrap();
         let vault_b = Vault::open(&secret_b).unwrap();
 
-        let blob = vault_a.encrypt_blob(b"secret data").unwrap();
-        let result = vault_b.decrypt_blob(&blob);
+        let framed = vault_a.encrypt_blob(b"secret data").unwrap();
+        let result = vault_b.decrypt_blob(&framed);
         assert!(matches!(result, Err(crate::FilerCryptoError::Aead)));
     }
 

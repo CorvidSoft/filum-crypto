@@ -43,14 +43,9 @@ final class CrossLanguageFixtureTests: XCTestCase {
     func testBlobFixtureDecrypts() throws {
         let fixture = try loadFixture("blob_v1")
         let plaintext = try hexDecode(try XCTUnwrap(fixture["plaintext_hex"] as? String))
-        let blobDict = try XCTUnwrap(fixture["blob"] as? [String: String])
-        let blob = EncryptedBlob(
-            ciphertext: Data(try hexDecode(try XCTUnwrap(blobDict["ciphertext_hex"]))),
-            iv: Data(try hexDecode(try XCTUnwrap(blobDict["iv_hex"]))),
-            wrappedKey: Data(try hexDecode(try XCTUnwrap(blobDict["wrapped_key_hex"])))
-        )
+        let framed = Data(try hexDecode(try XCTUnwrap(fixture["framed_hex"] as? String)))
         let vault = try Vault.open(masterSecret: Self.fixtureMasterSecret)
-        let recovered = try vault.decryptBlob(blob: blob)
+        let recovered = try vault.decryptBlob(framed: framed)
         XCTAssertEqual(recovered, Data(plaintext))
     }
 

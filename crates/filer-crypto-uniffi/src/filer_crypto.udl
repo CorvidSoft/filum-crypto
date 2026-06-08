@@ -19,12 +19,7 @@ enum FilerCryptoError {
     "InvalidKeyLength",
     "InvalidSignature",
     "Randomness",
-};
-
-dictionary EncryptedBlob {
-    bytes ciphertext;
-    bytes iv;
-    bytes wrapped_key;
+    "Io",
 };
 
 dictionary EncryptedField {
@@ -44,10 +39,16 @@ interface Vault {
     constructor(string phrase);
 
     [Throws=FilerCryptoError]
-    EncryptedBlob encrypt_blob(bytes plaintext);
+    bytes encrypt_blob(bytes plaintext);
 
     [Throws=FilerCryptoError]
-    bytes decrypt_blob(EncryptedBlob blob);
+    bytes decrypt_blob(bytes framed);
+
+    [Throws=FilerCryptoError]
+    void encrypt_file_to_blob(string in_path, string out_path);
+
+    [Throws=FilerCryptoError]
+    void decrypt_blob_to_file(string in_path, string out_path);
 
     [Throws=FilerCryptoError]
     EncryptedField encrypt_metadata_field(bytes plaintext);
