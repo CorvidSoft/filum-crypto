@@ -8,7 +8,7 @@ final class MetadataFieldRoundTripTests: XCTestCase {
 
     func testRoundTrip() throws {
         let vault = try freshVault()
-        let plaintext = Array("Project Plan 2026".utf8)
+        let plaintext = Data("Project Plan 2026".utf8)
         let field = try vault.encryptMetadataField(plaintext: plaintext)
         let recovered = try vault.decryptMetadataField(field: field)
         XCTAssertEqual(recovered, plaintext)
@@ -16,7 +16,7 @@ final class MetadataFieldRoundTripTests: XCTestCase {
 
     func testRoundTripUnicode() throws {
         let vault = try freshVault()
-        let plaintext = Array("こんにちは 🌸 filer".utf8)
+        let plaintext = Data("こんにちは 🌸 filer".utf8)
         let field = try vault.encryptMetadataField(plaintext: plaintext)
         let recovered = try vault.decryptMetadataField(field: field)
         XCTAssertEqual(recovered, plaintext)
@@ -24,17 +24,17 @@ final class MetadataFieldRoundTripTests: XCTestCase {
 
     func testRoundTripEmptyField() throws {
         let vault = try freshVault()
-        let field = try vault.encryptMetadataField(plaintext: [])
+        let field = try vault.encryptMetadataField(plaintext: Data())
         let recovered = try vault.decryptMetadataField(field: field)
-        XCTAssertEqual(recovered, [])
+        XCTAssertEqual(recovered, Data())
     }
 
     func testTamperedIvFails() throws {
         let vault = try freshVault()
-        let field = try vault.encryptMetadataField(plaintext: Array("secret".utf8))
+        let field = try vault.encryptMetadataField(plaintext: Data("secret".utf8))
         XCTAssertEqual(field.iv.count, 12)
         var tamperedIv = field.iv
-        tamperedIv[0] ^= 0xFF
+        tamperedIv[tamperedIv.startIndex] ^= 0xFF
         let tamperedField = EncryptedField(ciphertext: field.ciphertext, iv: tamperedIv)
         XCTAssertThrowsError(try vault.decryptMetadataField(field: tamperedField)) { err in
             guard case FilerCryptoError.Aead = err else {

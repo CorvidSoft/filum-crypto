@@ -8,7 +8,7 @@ final class BlobRoundTripTests: XCTestCase {
 
     func testRoundTripSmallPayload() throws {
         let vault = try freshVault()
-        let plaintext = Array("hello filer".utf8)
+        let plaintext = Data("hello filer".utf8)
         let blob = try vault.encryptBlob(plaintext: plaintext)
         let recovered = try vault.decryptBlob(blob: blob)
         XCTAssertEqual(recovered, plaintext)
@@ -16,16 +16,17 @@ final class BlobRoundTripTests: XCTestCase {
 
     func testRoundTripEmptyPayload() throws {
         let vault = try freshVault()
-        let blob = try vault.encryptBlob(plaintext: [])
+        let blob = try vault.encryptBlob(plaintext: Data())
         let recovered = try vault.decryptBlob(blob: blob)
-        XCTAssertEqual(recovered, [])
+        XCTAssertEqual(recovered, Data())
     }
 
     func testRoundTripLargePayload() throws {
         let vault = try freshVault()
-        let plaintext = (UInt8(0)...UInt8(255)).flatMap { byte -> [UInt8] in
+        let bytes = (UInt8(0)...UInt8(255)).flatMap { byte -> [UInt8] in
             Array(repeating: byte, count: 1024)
         }
+        let plaintext = Data(bytes)
         XCTAssertEqual(plaintext.count, 256 * 1024)
         let blob = try vault.encryptBlob(plaintext: plaintext)
         let recovered = try vault.decryptBlob(blob: blob)
@@ -34,11 +35,11 @@ final class BlobRoundTripTests: XCTestCase {
 
     func testTamperedCiphertextFailsAead() throws {
         let vault = try freshVault()
-        let plaintext = Array("hello filer".utf8)
+        let plaintext = Data("hello filer".utf8)
         let blob = try vault.encryptBlob(plaintext: plaintext)
         XCTAssertGreaterThan(blob.ciphertext.count, 0)
         var tamperedCiphertext = blob.ciphertext
-        tamperedCiphertext[0] ^= 0x01
+        tamperedCiphertext[tamperedCiphertext.startIndex] ^= 0x01
         let tamperedBlob = EncryptedBlob(
             ciphertext: tamperedCiphertext,
             iv: blob.iv,
@@ -54,7 +55,7 @@ final class BlobRoundTripTests: XCTestCase {
 
     func testDecryptUnderWrongMasterSecretFails() throws {
         let vault42 = try freshVault(secret: 0x42)
-        let blob = try vault42.encryptBlob(plaintext: Array("hello".utf8))
+        let blob = try vault42.encryptBlob(plaintext: Data("hello".utf8))
         let vault00 = try freshVault(secret: 0x00)
         XCTAssertThrowsError(try vault00.decryptBlob(blob: blob)) { err in
             guard case FilerCryptoError.Aead = err else {
