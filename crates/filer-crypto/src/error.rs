@@ -24,6 +24,11 @@ pub enum FilerCryptoError {
     InvalidSignature,
     #[error("randomness source unavailable")]
     Randomness,
+    /// An I/O operation (file read/write) failed. Kept payload-free so the
+    /// enum stays FFI-friendly; the underlying `std::io::Error` is not
+    /// surfaced because it could leak path or filesystem-state information.
+    #[error("I/O error")]
+    Io,
 }
 
 pub type Result<T> = std::result::Result<T, FilerCryptoError>;
