@@ -147,6 +147,13 @@ pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>
         .copy_from_slice(&framed[1 + WRAPPED_KEY_LEN..1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN]);
     let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
     let chunk_size = u32::from_be_bytes(framed[cs_off..cs_off + 4].try_into().unwrap()) as usize;
+    // `chunk_size` lives in the UNAUTHENTICATED header. The encoder always writes
+    // `CHUNK_SIZE`, so reject anything else rather than trust an attacker-controlled
+    // size to drive allocations/work — a tampered blob from an untrusted backend
+    // could otherwise demand a huge buffer (fatal under the extension's 20 MB cap).
+    if chunk_size != CHUNK_SIZE {
+        return Err(FilerCryptoError::Aead);
+    }
     let ct_chunk = chunk_size + 16;
 
     let cipher = Aes256Gcm::new((&*data_key).into());
@@ -264,6 +271,11 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
         .copy_from_slice(&header[1 + WRAPPED_KEY_LEN..1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN]);
     let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
     let chunk_size = u32::from_be_bytes(header[cs_off..cs_off + 4].try_into().unwrap()) as usize;
+    // Reject an attacker-controlled chunk_size from the unauthenticated header
+    // before it sizes the read buffer below (see decrypt_chunked for rationale).
+    if chunk_size != CHUNK_SIZE {
+        return Err(FilerCryptoError::Aead);
+    }
     let ct_chunk = chunk_size + 16;
 
     let cipher = Aes256Gcm::new((&*data_key).into());
@@ -429,6 +441,22 @@ mod tests {
         let framed = encrypt_chunked(b"some data", &key1).unwrap();
         let result = decrypt_chunked(&framed, &key2);
         assert!(matches!(result, Err(FilerCryptoError::Aead)));
+    }
+
+    #[test]
+    fn chunked_tampered_chunk_size_header_rejected() {
+        // The chunk_size field (header offset 68..72) is unauthenticated. A tampered
+        // value must be rejected BEFORE it sizes any allocation — guard against a
+        // malicious/huge size (DoS) rather than attempting a giant buffer.
+        let key = [42u8; 32];
+        let framed = encrypt_chunked(b"some data", &key).unwrap();
+        let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
+        let mut tampered = framed.clone();
+        tampered[cs_off..cs_off + 4].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
+        assert!(matches!(
+            decrypt_chunked(&tampered, &key),
+            Err(FilerCryptoError::Aead)
+        ));
     }
 
     #[test]
