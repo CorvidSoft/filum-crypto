@@ -67,7 +67,7 @@ type Result<T> = std::result::Result<T, FilerCryptoError>;
 //
 // EncryptedBlob, EncryptedField, DeviceSignature are declared here so that
 // include_scaffolding! can apply udl_derive(Record) to the local names.
-// We keep the iv field as Vec<u8> at the FFI boundary (UDL sequence<u8>)
+// We keep the iv field as Vec<u8> at the FFI boundary (UDL bytes)
 // and validate the fixed 12-byte length when converting back to core types.
 
 #[derive(Debug, Clone)]

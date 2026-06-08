@@ -22,14 +22,14 @@ enum FilerCryptoError {
 };
 
 dictionary EncryptedBlob {
-    sequence<u8> ciphertext;
-    sequence<u8> iv;
-    sequence<u8> wrapped_key;
+    bytes ciphertext;
+    bytes iv;
+    bytes wrapped_key;
 };
 
 dictionary EncryptedField {
-    sequence<u8> ciphertext;
-    sequence<u8> iv;
+    bytes ciphertext;
+    bytes iv;
 };
 
 dictionary DeviceSignature {
@@ -44,16 +44,16 @@ interface Vault {
     constructor(string phrase);
 
     [Throws=FilerCryptoError]
-    EncryptedBlob encrypt_blob(sequence<u8> plaintext);
+    EncryptedBlob encrypt_blob(bytes plaintext);
 
     [Throws=FilerCryptoError]
-    sequence<u8> decrypt_blob(EncryptedBlob blob);
+    bytes decrypt_blob(EncryptedBlob blob);
 
     [Throws=FilerCryptoError]
-    EncryptedField encrypt_metadata_field(sequence<u8> plaintext);
+    EncryptedField encrypt_metadata_field(bytes plaintext);
 
     [Throws=FilerCryptoError]
-    sequence<u8> decrypt_metadata_field(EncryptedField field);
+    bytes decrypt_metadata_field(EncryptedField field);
 
     DeviceSignature sign_challenge(sequence<u8> nonce);
 

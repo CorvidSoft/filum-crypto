@@ -45,13 +45,13 @@ final class CrossLanguageFixtureTests: XCTestCase {
         let plaintext = try hexDecode(try XCTUnwrap(fixture["plaintext_hex"] as? String))
         let blobDict = try XCTUnwrap(fixture["blob"] as? [String: String])
         let blob = EncryptedBlob(
-            ciphertext: try hexDecode(try XCTUnwrap(blobDict["ciphertext_hex"])),
-            iv: try hexDecode(try XCTUnwrap(blobDict["iv_hex"])),
-            wrappedKey: try hexDecode(try XCTUnwrap(blobDict["wrapped_key_hex"]))
+            ciphertext: Data(try hexDecode(try XCTUnwrap(blobDict["ciphertext_hex"]))),
+            iv: Data(try hexDecode(try XCTUnwrap(blobDict["iv_hex"]))),
+            wrappedKey: Data(try hexDecode(try XCTUnwrap(blobDict["wrapped_key_hex"])))
         )
         let vault = try Vault.open(masterSecret: Self.fixtureMasterSecret)
         let recovered = try vault.decryptBlob(blob: blob)
-        XCTAssertEqual(recovered, plaintext)
+        XCTAssertEqual(recovered, Data(plaintext))
     }
 
     func testMetadataFixtureDecrypts() throws {
@@ -59,12 +59,12 @@ final class CrossLanguageFixtureTests: XCTestCase {
         let plaintext = try hexDecode(try XCTUnwrap(fixture["plaintext_hex"] as? String))
         let fieldDict = try XCTUnwrap(fixture["field"] as? [String: String])
         let field = EncryptedField(
-            ciphertext: try hexDecode(try XCTUnwrap(fieldDict["ciphertext_hex"])),
-            iv: try hexDecode(try XCTUnwrap(fieldDict["iv_hex"]))
+            ciphertext: Data(try hexDecode(try XCTUnwrap(fieldDict["ciphertext_hex"]))),
+            iv: Data(try hexDecode(try XCTUnwrap(fieldDict["iv_hex"])))
         )
         let vault = try Vault.open(masterSecret: Self.fixtureMasterSecret)
         let recovered = try vault.decryptMetadataField(field: field)
-        XCTAssertEqual(recovered, plaintext)
+        XCTAssertEqual(recovered, Data(plaintext))
     }
 
     func testSignatureFixtureVerifies() throws {
