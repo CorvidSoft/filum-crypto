@@ -47,9 +47,9 @@ jobs:
       - name: Verify committed bindings are up to date
         run: |
           if ! git diff --exit-code \
-                  Sources/FilerCrypto/FilerCrypto.swift \
-                  Sources/FilerCrypto/filer_cryptoFFI.h \
-                  Sources/FilerCrypto/filer_cryptoFFI.modulemap; then
+                  Sources/FilumCrypto/FilumCrypto.swift \
+                  Sources/FilumCrypto/filum_cryptoFFI.h \
+                  Sources/FilumCrypto/filum_cryptoFFI.modulemap; then
               echo "::error::Committed Swift bindings are stale." >&2
               echo "Run ./scripts/build.sh and commit the regenerated files." >&2
               exit 1
@@ -57,5 +57,5 @@ jobs:
 
       - name: Swift test (local-link mode)
         env:
-          FILER_CRYPTO_LOCAL: "1"
+          FILUM_CRYPTO_LOCAL: "1"
         run: swift test

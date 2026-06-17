@@ -442,8 +442,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
-name = "filer-crypto"
-version = "0.3.0"
+name = "filum-crypto"
+version = "0.3.1"
 dependencies = [
  "aes-gcm",
  "bip39",
@@ -461,10 +461,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "filer-crypto-uniffi"
-version = "0.3.0"
+name = "filum-crypto-uniffi"
+version = "0.3.1"
 dependencies = [
- "filer-crypto",
+ "filum-crypto",
  "thiserror",
  "uniffi",
  "zeroize",

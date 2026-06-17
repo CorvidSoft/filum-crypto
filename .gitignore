@@ -26,6 +26,6 @@ target
 *.xcframework/
 
 # Generated UniFFI artifacts
-crates/filer-crypto-uniffi/target/
+crates/filum-crypto-uniffi/target/
 crates/*/target/
 build/

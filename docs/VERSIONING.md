@@ -1,6 +1,6 @@
 # Versioning
 
-filer-crypto follows semver (MAJOR.MINOR.PATCH).
+filum-crypto follows semver (MAJOR.MINOR.PATCH).
 
 ## The one rule that overrides everything else
 
@@ -16,11 +16,13 @@ is the entire reason MAJOR exists in this crate.
   nonce prefix, chunk size — see `blob.rs`) or its STREAM chunking, or field
   name / order / length in `EncryptedField` or `DeviceSignature`.
 - Wrapped-key layout change (currently `IV(12) || GCM ciphertext+tag`).
-- HKDF context strings (`WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs`).
-  The `v1` in `filer-crypto/v1/...` exists so that v2 context strings can
-  be added later without rotating the v1 ones — but adding a v2 context
-  that an existing `Vault` produces is itself a MAJOR change to the
-  produced envelopes. See `CLAUDE.md` invariant #8.
+- HKDF context strings (`WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs`;
+  see that file for the exact byte literals, which are a frozen wire
+  constant and intentionally NOT rebranded). The `v1` segment in the
+  context-string prefix exists so that v2 context strings can be added
+  later without rotating the v1 ones — but adding a v2 context that an
+  existing `Vault` produces is itself a MAJOR change to the produced
+  envelopes. See `CLAUDE.md` invariant #8.
 - Switching AEAD, KDF, signature scheme, or recovery-phrase wordlist.
 - Removing or renaming any `pub` method on `Vault` or any `pub` free
   function exported through the UDL.
@@ -29,7 +31,7 @@ is the entire reason MAJOR exists in this crate.
 
 - New methods on `Vault` that don't change the meaning of existing ones.
 - New free functions in `recovery.rs` or new modules.
-- New error variants on `FilerCryptoError`. Adding variants is
+- New error variants on `FilumCryptoError`. Adding variants is
   source-breaking for `match` consumers without a wildcard; we tolerate
   this as MINOR because the variants are intentionally coarse and
   external matchers should use a wildcard.
@@ -101,8 +103,8 @@ failure point.
 |---|---|---|
 | Build / checksum | No commit, no tag, no release published | Re-run the workflow |
 | `git push origin HEAD:main` | No commit, no tag, no release published | Re-run; idempotent |
-| `git push origin v<X.Y.Z>` | Pin commit on `main`, no tag, no release | Manually `git tag v<X.Y.Z> <pin-commit-sha>` and `git push origin v<X.Y.Z>`, then `gh release create v<X.Y.Z> --notes ...` with the artifacts (XCFramework + `FilerCrypto.swift`) rebuilt locally, OR revert the pin commit and re-run the workflow |
-| `gh release create` | Pin commit on `main`, tag exists, no release | Manually `gh release create v<X.Y.Z> build/FilerCryptoFFI.xcframework.zip Sources/FilerCrypto/FilerCrypto.swift --notes "$(./scripts/release-notes.sh <xcframework-sha256> <filercrypto-swift-sha256>)"` with a locally rebuilt artifact (compute the swift sha via `shasum -a 256 Sources/FilerCrypto/FilerCrypto.swift`) |
+| `git push origin v<X.Y.Z>` | Pin commit on `main`, no tag, no release | Manually `git tag v<X.Y.Z> <pin-commit-sha>` and `git push origin v<X.Y.Z>`, then `gh release create v<X.Y.Z> --notes ...` with the artifacts (XCFramework + `FilumCrypto.swift`) rebuilt locally, OR revert the pin commit and re-run the workflow |
+| `gh release create` | Pin commit on `main`, tag exists, no release | Manually `gh release create v<X.Y.Z> build/FilumCryptoFFI.xcframework.zip Sources/FilumCrypto/FilumCrypto.swift --notes "$(./scripts/release-notes.sh <xcframework-sha256> <filumcrypto-swift-sha256>)"` with a locally rebuilt artifact (compute the swift sha via `shasum -a 256 Sources/FilumCrypto/FilumCrypto.swift`) |
 
 Branch-protection caveat: if `main` requires PR review, the workflow's
 direct push will fail. Either configure the GitHub Actions bot to
@@ -112,5 +114,5 @@ dedicated `releases/*` branch.
 ## When in doubt
 
 If a change *might* alter envelope bytes for any plausible input, run
-the cross-language fixture tests (`Tests/FilerCryptoTests/Fixtures/`).
+the cross-language fixture tests (`Tests/FilumCryptoTests/Fixtures/`).
 If they fail after your change, that's a MAJOR.

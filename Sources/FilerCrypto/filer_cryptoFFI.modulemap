@@ -1,7 +1,0 @@
-module filer_cryptoFFI {
-    header "filer_cryptoFFI.h"
-    export *
-    use "Darwin"
-    use "_Builtin_stdbool"
-    use "_Builtin_stdint"
-}
