@@ -7,8 +7,8 @@ import Foundation
 // Depending on the consumer's build setup, the low-level FFI code
 // might be in a separate module, or it might be compiled inline into
 // this module. This is a bit of light hackery to work with both.
-#if canImport(filer_cryptoFFI)
-import filer_cryptoFFI
+#if canImport(filum_cryptoFFI)
+import filum_cryptoFFI
 #endif
 
 fileprivate extension RustBuffer {
@@ -25,13 +25,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_filer_crypto_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_filum_crypto_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_filer_crypto_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_filum_crypto_rustbuffer_free(self, $0) }
     }
 }
 
@@ -281,7 +281,7 @@ private func makeRustCall<T, E: Swift.Error>(
     _ callback: (UnsafeMutablePointer<RustCallStatus>) -> T,
     errorHandler: ((RustBuffer) throws -> E)?
 ) throws -> T {
-    uniffiEnsureFilerCryptoInitialized()
+    uniffiEnsureFilumCryptoInitialized()
     var callStatus = RustCallStatus.init()
     let returnedVal = callback(&callStatus)
     try uniffiCheckCallStatus(callStatus: callStatus, errorHandler: errorHandler)
@@ -550,7 +550,7 @@ open class Vault: VaultProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_filer_crypto_fn_clone_vault(self.handle, $0) }
+        return try! rustCall { uniffi_filum_crypto_fn_clone_vault(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -560,21 +560,21 @@ open class Vault: VaultProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_filer_crypto_fn_free_vault(handle, $0) }
+        try! rustCall { uniffi_filum_crypto_fn_free_vault(handle, $0) }
     }
 
     
 public static func fromRecoveryPhrase(phrase: String)throws  -> Vault  {
-    return try  FfiConverterTypeVault_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_constructor_vault_from_recovery_phrase(
+    return try  FfiConverterTypeVault_lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_constructor_vault_from_recovery_phrase(
         FfiConverterString.lower(phrase),$0
     )
 })
 }
     
 public static func `open`(masterSecret: [UInt8])throws  -> Vault  {
-    return try  FfiConverterTypeVault_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_constructor_vault_open(
+    return try  FfiConverterTypeVault_lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_constructor_vault_open(
         FfiConverterSequenceUInt8.lower(masterSecret),$0
     )
 })
@@ -583,16 +583,16 @@ public static func `open`(masterSecret: [UInt8])throws  -> Vault  {
 
     
 open func decryptBlob(framed: Data)throws  -> Data  {
-    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_decrypt_blob(
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_decrypt_blob(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(framed),$0
     )
 })
 }
     
-open func decryptBlobToFile(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_decrypt_blob_to_file(
+open func decryptBlobToFile(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_decrypt_blob_to_file(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(inPath),
         FfiConverterString.lower(outPath),$0
@@ -601,8 +601,8 @@ open func decryptBlobToFile(inPath: String, outPath: String)throws   {try rustCa
 }
     
 open func decryptMetadataField(field: EncryptedField)throws  -> Data  {
-    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_decrypt_metadata_field(
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_decrypt_metadata_field(
             self.uniffiCloneHandle(),
         FfiConverterTypeEncryptedField_lower(field),$0
     )
@@ -611,23 +611,23 @@ open func decryptMetadataField(field: EncryptedField)throws  -> Data  {
     
 open func devicePublicKey() -> [UInt8]  {
     return try!  FfiConverterSequenceUInt8.lift(try! rustCall() {
-    uniffi_filer_crypto_fn_method_vault_device_public_key(
+    uniffi_filum_crypto_fn_method_vault_device_public_key(
             self.uniffiCloneHandle(),$0
     )
 })
 }
     
 open func encryptBlob(plaintext: Data)throws  -> Data  {
-    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_encrypt_blob(
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_encrypt_blob(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(plaintext),$0
     )
 })
 }
     
-open func encryptFileToBlob(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_encrypt_file_to_blob(
+open func encryptFileToBlob(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_encrypt_file_to_blob(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(inPath),
         FfiConverterString.lower(outPath),$0
@@ -636,8 +636,8 @@ open func encryptFileToBlob(inPath: String, outPath: String)throws   {try rustCa
 }
     
 open func encryptMetadataField(plaintext: Data)throws  -> EncryptedField  {
-    return try  FfiConverterTypeEncryptedField_lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_method_vault_encrypt_metadata_field(
+    return try  FfiConverterTypeEncryptedField_lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_method_vault_encrypt_metadata_field(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(plaintext),$0
     )
@@ -646,7 +646,7 @@ open func encryptMetadataField(plaintext: Data)throws  -> EncryptedField  {
     
 open func signChallenge(nonce: [UInt8]) -> DeviceSignature  {
     return try!  FfiConverterTypeDeviceSignature_lift(try! rustCall() {
-    uniffi_filer_crypto_fn_method_vault_sign_challenge(
+    uniffi_filum_crypto_fn_method_vault_sign_challenge(
             self.uniffiCloneHandle(),
         FfiConverterSequenceUInt8.lower(nonce),$0
     )
@@ -805,7 +805,7 @@ public func FfiConverterTypeEncryptedField_lower(_ value: EncryptedField) -> Rus
 }
 
 
-public enum FilerCryptoError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public enum FilumCryptoError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -834,16 +834,16 @@ public enum FilerCryptoError: Swift.Error, Equatable, Hashable, Foundation.Local
 }
 
 #if compiler(>=6)
-extension FilerCryptoError: Sendable {}
+extension FilumCryptoError: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFilerCryptoError: FfiConverterRustBuffer {
-    typealias SwiftType = FilerCryptoError
+public struct FfiConverterTypeFilumCryptoError: FfiConverterRustBuffer {
+    typealias SwiftType = FilumCryptoError
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FilerCryptoError {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FilumCryptoError {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
@@ -879,7 +879,7 @@ public struct FfiConverterTypeFilerCryptoError: FfiConverterRustBuffer {
         }
     }
 
-    public static func write(_ value: FilerCryptoError, into buf: inout [UInt8]) {
+    public static func write(_ value: FilumCryptoError, into buf: inout [UInt8]) {
         switch value {
 
         
@@ -907,15 +907,15 @@ public struct FfiConverterTypeFilerCryptoError: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFilerCryptoError_lift(_ buf: RustBuffer) throws -> FilerCryptoError {
-    return try FfiConverterTypeFilerCryptoError.lift(buf)
+public func FfiConverterTypeFilumCryptoError_lift(_ buf: RustBuffer) throws -> FilumCryptoError {
+    return try FfiConverterTypeFilumCryptoError.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFilerCryptoError_lower(_ value: FilerCryptoError) -> RustBuffer {
-    return FfiConverterTypeFilerCryptoError.lower(value)
+public func FfiConverterTypeFilumCryptoError_lower(_ value: FilumCryptoError) -> RustBuffer {
+    return FfiConverterTypeFilumCryptoError.lower(value)
 }
 
 #if swift(>=5.8)
@@ -943,27 +943,27 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
     }
 }
 public func generateMasterSecret()throws  -> [UInt8]  {
-    return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_func_generate_master_secret($0
+    return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_func_generate_master_secret($0
     )
 })
 }
 public func phraseToSecret(phrase: String)throws  -> [UInt8]  {
-    return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_func_phrase_to_secret(
+    return try  FfiConverterSequenceUInt8.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_func_phrase_to_secret(
         FfiConverterString.lower(phrase),$0
     )
 })
 }
 public func secretToPhrase(secret: [UInt8])throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_func_secret_to_phrase(
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_func_secret_to_phrase(
         FfiConverterSequenceUInt8.lower(secret),$0
     )
 })
 }
-public func verifySignature(publicKey: [UInt8], nonce: [UInt8], signature: [UInt8])throws   {try rustCallWithError(FfiConverterTypeFilerCryptoError_lift) {
-    uniffi_filer_crypto_fn_func_verify_signature(
+public func verifySignature(publicKey: [UInt8], nonce: [UInt8], signature: [UInt8])throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+    uniffi_filum_crypto_fn_func_verify_signature(
         FfiConverterSequenceUInt8.lower(publicKey),
         FfiConverterSequenceUInt8.lower(nonce),
         FfiConverterSequenceUInt8.lower(signature),$0
@@ -982,50 +982,50 @@ private let initializationResult: InitializationResult = {
     // Get the bindings contract version from our ComponentInterface
     let bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
-    let scaffolding_contract_version = ffi_filer_crypto_uniffi_contract_version()
+    let scaffolding_contract_version = ffi_filum_crypto_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_filer_crypto_checksum_func_generate_master_secret() != 48501) {
+    if (uniffi_filum_crypto_checksum_func_generate_master_secret() != 18655) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_func_phrase_to_secret() != 52504) {
+    if (uniffi_filum_crypto_checksum_func_phrase_to_secret() != 6343) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_func_secret_to_phrase() != 61979) {
+    if (uniffi_filum_crypto_checksum_func_secret_to_phrase() != 55002) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_func_verify_signature() != 24370) {
+    if (uniffi_filum_crypto_checksum_func_verify_signature() != 24993) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob() != 32882) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob() != 60168) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_blob_to_file() != 27662) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob_to_file() != 35959) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_decrypt_metadata_field() != 35262) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_metadata_field() != 46268) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_device_public_key() != 43615) {
+    if (uniffi_filum_crypto_checksum_method_vault_device_public_key() != 23383) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_blob() != 44355) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_blob() != 51246) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_file_to_blob() != 8057) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_file_to_blob() != 35809) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_encrypt_metadata_field() != 12280) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_metadata_field() != 1060) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_method_vault_sign_challenge() != 6062) {
+    if (uniffi_filum_crypto_checksum_method_vault_sign_challenge() != 40914) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_constructor_vault_from_recovery_phrase() != 40323) {
+    if (uniffi_filum_crypto_checksum_constructor_vault_from_recovery_phrase() != 3444) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filer_crypto_checksum_constructor_vault_open() != 14736) {
+    if (uniffi_filum_crypto_checksum_constructor_vault_open() != 11894) {
         return InitializationResult.apiChecksumMismatch
     }
 
@@ -1034,7 +1034,7 @@ private let initializationResult: InitializationResult = {
 
 // Make the ensure init function public so that other modules which have external type references to
 // our types can call it.
-public func uniffiEnsureFilerCryptoInitialized() {
+public func uniffiEnsureFilumCryptoInitialized() {
     switch initializationResult {
     case .ok:
         break

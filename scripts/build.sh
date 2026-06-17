@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build the filer-crypto Rust libraries and regenerate the Swift bindings.
+# Build the filum-crypto Rust libraries and regenerate the Swift bindings.
 #
 # Usage: ./scripts/build.sh [release|debug]   (default: release)
 #
 # Outputs:
-#   - target/{release,debug}/libfiler_crypto.{a,dylib,so}
-#   - Sources/FilerCrypto/FilerCrypto.swift  (regenerated)
+#   - target/{release,debug}/libfilum_crypto.{a,dylib,so}
+#   - Sources/FilumCrypto/FilumCrypto.swift  (regenerated)
 #
 set -euo pipefail
 
@@ -38,21 +38,21 @@ else
     exit 3
 fi
 
-LIB_FILE="$LIB_DIR/libfiler_crypto.$LIB_EXT"
+LIB_FILE="$LIB_DIR/libfilum_crypto.$LIB_EXT"
 if [[ ! -f "$LIB_FILE" ]]; then
     echo "Expected library not found: $LIB_FILE" >&2
     exit 4
 fi
 
 echo "→ Regenerating Swift bindings..."
-mkdir -p Sources/FilerCrypto
-cargo run --quiet --package filer-crypto-uniffi --bin uniffi-bindgen -- \
+mkdir -p Sources/FilumCrypto
+cargo run --quiet --package filum-crypto-uniffi --bin uniffi-bindgen -- \
     generate \
     --library \
     --language swift \
-    --out-dir Sources/FilerCrypto \
+    --out-dir Sources/FilumCrypto \
     "$LIB_FILE"
 
 echo "✓ Build complete."
 echo "  Library:  $LIB_FILE"
-echo "  Bindings: $ROOT/Sources/FilerCrypto/FilerCrypto.swift"
+echo "  Bindings: $ROOT/Sources/FilumCrypto/FilumCrypto.swift"

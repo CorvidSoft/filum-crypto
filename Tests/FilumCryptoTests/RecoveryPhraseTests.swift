@@ -1,5 +1,5 @@
 import XCTest
-@testable import FilerCrypto
+@testable import FilumCrypto
 
 final class RecoveryPhraseTests: XCTestCase {
     func testGenerateMasterSecretIs32Bytes() throws {
@@ -45,8 +45,8 @@ final class RecoveryPhraseTests: XCTestCase {
 
     func testInvalidPhraseRejected() throws {
         XCTAssertThrowsError(try phraseToSecret(phrase: "not a real bip39 phrase at all")) { err in
-            guard case FilerCryptoError.InvalidPhrase = err else {
-                XCTFail("expected FilerCryptoError.InvalidPhrase, got \(err)")
+            guard case FilumCryptoError.InvalidPhrase = err else {
+                XCTFail("expected FilumCryptoError.InvalidPhrase, got \(err)")
                 return
             }
         }

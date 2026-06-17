@@ -1,5 +1,5 @@
 import XCTest
-@testable import FilerCrypto
+@testable import FilumCrypto
 
 final class SigningTests: XCTestCase {
     func testSignVerifyRoundTrip() throws {
@@ -17,8 +17,8 @@ final class SigningTests: XCTestCase {
         XCTAssertThrowsError(
             try verifySignature(publicKey: publicKey, nonce: Array("nonce-b".utf8), signature: signature.bytes)
         ) { err in
-            guard case FilerCryptoError.InvalidSignature = err else {
-                XCTFail("expected FilerCryptoError.InvalidSignature, got \(err)")
+            guard case FilumCryptoError.InvalidSignature = err else {
+                XCTFail("expected FilumCryptoError.InvalidSignature, got \(err)")
                 return
             }
         }
@@ -33,8 +33,8 @@ final class SigningTests: XCTestCase {
         XCTAssertThrowsError(
             try verifySignature(publicKey: publicKeyB, nonce: nonce, signature: signatureA.bytes)
         ) { err in
-            guard case FilerCryptoError.InvalidSignature = err else {
-                XCTFail("expected FilerCryptoError.InvalidSignature, got \(err)")
+            guard case FilumCryptoError.InvalidSignature = err else {
+                XCTFail("expected FilumCryptoError.InvalidSignature, got \(err)")
                 return
             }
         }

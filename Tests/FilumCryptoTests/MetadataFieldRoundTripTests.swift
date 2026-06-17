@@ -1,5 +1,5 @@
 import XCTest
-@testable import FilerCrypto
+@testable import FilumCrypto
 
 final class MetadataFieldRoundTripTests: XCTestCase {
     private func freshVault() throws -> Vault {
@@ -37,8 +37,8 @@ final class MetadataFieldRoundTripTests: XCTestCase {
         tamperedIv[tamperedIv.startIndex] ^= 0xFF
         let tamperedField = EncryptedField(ciphertext: field.ciphertext, iv: tamperedIv)
         XCTAssertThrowsError(try vault.decryptMetadataField(field: tamperedField)) { err in
-            guard case FilerCryptoError.Aead = err else {
-                XCTFail("expected FilerCryptoError.Aead, got \(err)")
+            guard case FilumCryptoError.Aead = err else {
+                XCTFail("expected FilumCryptoError.Aead, got \(err)")
                 return
             }
         }

@@ -1,6 +1,6 @@
 //! Cross-language test-fixture generator.
 //!
-//! Produces the JSON files in `Tests/FilerCryptoTests/Fixtures/` that the
+//! Produces the JSON files in `Tests/FilumCryptoTests/Fixtures/` that the
 //! Swift parity tests decrypt and verify. Run with:
 //!
 //!     cargo test -p filum-crypto --test generate_fixtures -- --ignored --nocapture
@@ -62,7 +62,7 @@ fn fixtures_dir() -> PathBuf {
         .join("..")
         .join("..")
         .join("Tests")
-        .join("FilerCryptoTests")
+        .join("FilumCryptoTests")
         .join("Fixtures")
 }
 

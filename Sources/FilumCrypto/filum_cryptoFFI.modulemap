@@ -1,5 +1,5 @@
-module filer_cryptoFFI {
-    header "filer_cryptoFFI.h"
+module filum_cryptoFFI {
+    header "filum_cryptoFFI.h"
     export *
     use "Darwin"
     use "_Builtin_stdbool"

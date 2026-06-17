@@ -1,5 +1,5 @@
 import XCTest
-@testable import FilerCrypto
+@testable import FilumCrypto
 
 /// Decrypts the Rust-produced golden fixtures committed in Fixtures/.
 /// These pin the wire format: any change to AEAD / HKDF / envelope

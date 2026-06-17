@@ -1,5 +1,5 @@
 import XCTest
-@testable import FilerCrypto
+@testable import FilumCrypto
 
 final class BlobRoundTripTests: XCTestCase {
     /// Chunked-codec header length (version + wrapped key + nonce prefix +
@@ -46,8 +46,8 @@ final class BlobRoundTripTests: XCTestCase {
         let idx = framed.startIndex + Self.headerLen + 10
         framed[idx] ^= 0x01
         XCTAssertThrowsError(try vault.decryptBlob(framed: framed)) { err in
-            guard case FilerCryptoError.Aead = err else {
-                XCTFail("expected FilerCryptoError.Aead, got \(err)")
+            guard case FilumCryptoError.Aead = err else {
+                XCTFail("expected FilumCryptoError.Aead, got \(err)")
                 return
             }
         }
@@ -58,8 +58,8 @@ final class BlobRoundTripTests: XCTestCase {
         let framed = try vault42.encryptBlob(plaintext: Data("hello".utf8))
         let vault00 = try freshVault(secret: 0x00)
         XCTAssertThrowsError(try vault00.decryptBlob(framed: framed)) { err in
-            guard case FilerCryptoError.Aead = err else {
-                XCTFail("expected FilerCryptoError.Aead, got \(err)")
+            guard case FilumCryptoError.Aead = err else {
+                XCTFail("expected FilumCryptoError.Aead, got \(err)")
                 return
             }
         }
@@ -94,13 +94,13 @@ final class BlobRoundTripTests: XCTestCase {
         let outURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(UUID().uuidString).dec")
         defer { try? FileManager.default.removeItem(at: outURL) }
-        // A nonexistent input file must surface as FilerCryptoError.Io across the FFI,
+        // A nonexistent input file must surface as FilumCryptoError.Io across the FFI,
         // not crash the boundary.
         XCTAssertThrowsError(
             try vault.decryptBlobToFile(inPath: "/nonexistent/filer-missing.enc", outPath: outURL.path)
         ) { err in
-            guard case FilerCryptoError.Io = err else {
-                XCTFail("expected FilerCryptoError.Io, got \(err)")
+            guard case FilumCryptoError.Io = err else {
+                XCTFail("expected FilumCryptoError.Io, got \(err)")
                 return
             }
         }
