@@ -76,7 +76,7 @@ let targets: [Target] =
             // before the first release is cut; that's expected.
             url:
                 "https://github.com/CorvidSoft/filum-crypto/releases/download/v0.3.1/FilumCryptoFFI.xcframework.zip",
-            checksum: "ee846a2346b8ee32325ee46d288925331f855be36a7c128a06bc33a86d0e3888"
+            checksum: "78f96c30c518a8990c812e5e6fd7d99e02abf0731a8499c4c3fd2337a0028882"
         ),
         .target(
             name: "FilumCrypto",
