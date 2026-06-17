@@ -18,7 +18,7 @@ public would be worse than an obviously-test value.
 ## Regeneration
 
 ```sh
-cargo test -p filer-crypto --test generate_fixtures -- --ignored --nocapture
+cargo test -p filum-crypto --test generate_fixtures -- --ignored --nocapture
 ```
 
 Regenerate fixtures only when:

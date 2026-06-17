@@ -1,12 +1,12 @@
-# filer-crypto — agent guide
+# filum-crypto — agent guide
 
-`filer-crypto` is the open-source cryptographic core for [Filer](https://github.com/CorvidSoft/filer) — an iOS zero-knowledge document vault. This crate ships envelope encryption, key derivation, recovery-phrase encoding, and device signing primitives, exposed to Swift via a UniFFI binding crate and packaged as a Swift Package.
+`filum-crypto` is the open-source cryptographic core for [Filum](https://github.com/CorvidSoft/filum) — an iOS zero-knowledge document vault. This crate ships envelope encryption, key derivation, recovery-phrase encoding, and device signing primitives, exposed to Swift via a UniFFI binding crate and packaged as a Swift Package.
 
-Most day-to-day work in this repo does NOT require reading the parent Filer DESIGN.md. The invariants and contracts below are enough.
+Most day-to-day work in this repo does NOT require reading the parent Filum DESIGN.md. The invariants and contracts below are enough.
 
 ## Hard invariants — do not violate
 
-1. **Never log key material, master secrets, or signatures.** Not in `println!`, not in test assertions, not in error messages, not in `Debug` impls of structs that hold key material. The `FilerCryptoError` variants are intentionally coarse to prevent leakage.
+1. **Never log key material, master secrets, or signatures.** Not in `println!`, not in test assertions, not in error messages, not in `Debug` impls of structs that hold key material. The `FilumCryptoError` variants are intentionally coarse to prevent leakage.
 
 2. **Stay in the RustCrypto family.** No `ring`, no `openssl`, no `rustls`. The dependency tree is intentionally small and audit-friendly. Adding a non-RustCrypto crypto dep requires explicit justification (open an issue first).
 
@@ -14,13 +14,13 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 
 4. **Constant-time comparisons for secrets.** When comparing MAC tags, signatures, or any key-derived bytes, never use `==` — use `subtle::ConstantTimeEq` (the `subtle` crate is intentionally removed from deps until a path actually needs it; re-add then). AEAD tag verification is constant-time inside `aes-gcm`, so we rely on the AEAD API rather than manual tag comparison.
 
-5. **No `panic!`/`unwrap()`/`expect()` on external input.** Functions exposed at the FFI boundary (`filer-crypto-uniffi` and the `pub` surface of `filer-crypto`) must return `Result<_, FilerCryptoError>` on bad input. Internal helpers may unwrap when the invariant is provable from the immediate caller. Randomness failures are propagated as `FilerCryptoError::Randomness` via `OsRng.try_fill_bytes`, not as panics — this applies all the way through the FFI: `generate_master_secret` in the UDL is `[Throws=FilerCryptoError]` and Swift callers must handle the throw.
+5. **No `panic!`/`unwrap()`/`expect()` on external input.** Functions exposed at the FFI boundary (`filum-crypto-uniffi` and the `pub` surface of `filum-crypto`) must return `Result<_, FilumCryptoError>` on bad input. Internal helpers may unwrap when the invariant is provable from the immediate caller. Randomness failures are propagated as `FilumCryptoError::Randomness` via `OsRng.try_fill_bytes`, not as panics — this applies all the way through the FFI: `generate_master_secret` in the UDL is `[Throws=FilumCryptoError]` and Swift callers must handle the throw.
 
 6. **MIT-compatible deps only.** The crate is MIT. New deps must be MIT, Apache-2.0, BSD, or compatible. No GPL.
 
-7. **Envelope formats are stable wire format.** `EncryptedBlob` and `EncryptedField` structs are part of the contract with the consuming Filer app. Changing field names, lengths, ordering, or the wrapped-key layout (currently `IV(12) || GCM ciphertext+tag`) is a major-version compatibility break — every existing user's vault becomes undecryptable.
+7. **Envelope formats are stable wire format.** `EncryptedBlob` and `EncryptedField` structs are part of the contract with the consuming Filum app. Changing field names, lengths, ordering, or the wrapped-key layout (currently `IV(12) || GCM ciphertext+tag`) is a major-version compatibility break — every existing user's vault becomes undecryptable.
 
-8. **HKDF context strings are wire format too.** `WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs` are `filer-crypto/v1/{wrap,metadata,sign}`. Changing the bytes of any context string is equivalent to changing the master secret — all existing vaults become undecryptable. The `v1` segment exists so we can add `v2` context strings later without rotating the v1 ones.
+8. **HKDF context strings are wire format too.** `WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs` are frozen byte literals (see `kdf.rs` for the exact bytes — the `…-crypto/v1/{wrap,metadata,sign}` prefix is a permanent wire constant and is intentionally NOT rebranded; renaming it re-derives every key and bricks all vaults). Changing the bytes of any context string is equivalent to changing the master secret — all existing vaults become undecryptable. The `v1` segment exists so we can add `v2` context strings later without rotating the v1 ones.
 
 9. **Binding crate stays on Rust edition 2021.** UniFFI's `udl_derive` generates blanket impls (`impl<UT> Lower<UT> for ...`) that violate Rust 2024's tightened orphan rules. The core crate stays on 2024; only the binding glue is downgraded. Don't try to "fix" this without a UniFFI release that supports edition 2024.
 
@@ -28,11 +28,11 @@ Most day-to-day work in this repo does NOT require reading the parent Filer DESI
 
 ## Repo map
 
-- `crates/filer-crypto/` — pure-Rust core. Public API is `Vault` in `vault.rs` + stateless functions in `recovery.rs`.
-- `crates/filer-crypto-uniffi/` — UniFFI binding layer. UDL in `src/filer_crypto.udl`; Rust wrappers in `src/lib.rs`; embedded `uniffi-bindgen` CLI in `src/bin/`.
-- `Sources/FilerCrypto/` — generated Swift bindings + C header + module map. Regenerated by `scripts/build.sh`; committed.
-- `Package.swift` — Swift Package manifest. `swift package describe` works; `swift build` / `swift test` will fail at link time until the XCFramework follow-up lands (see [issue #3](https://github.com/CorvidSoft/filer-crypto/issues/3)).
-- `Tests/FilerCryptoTests/` — Swift test target. Currently a single `XCTSkip` placeholder.
+- `crates/filum-crypto/` — pure-Rust core. Public API is `Vault` in `vault.rs` + stateless functions in `recovery.rs`.
+- `crates/filum-crypto-uniffi/` — UniFFI binding layer. UDL in `src/filum_crypto.udl`; Rust wrappers in `src/lib.rs`; embedded `uniffi-bindgen` CLI in `src/bin/`.
+- `Sources/FilumCrypto/` — generated Swift bindings + C header + module map. Regenerated by `scripts/build.sh`; committed.
+- `Package.swift` — Swift Package manifest. `swift package describe` works; `swift build` / `swift test` will fail at link time until the XCFramework follow-up lands (see [issue #3](https://github.com/CorvidSoft/filum-crypto/issues/3)).
+- `Tests/FilumCryptoTests/` — Swift test target. Currently a single `XCTSkip` placeholder.
 - `scripts/build.sh` — builds the workspace and regenerates Swift bindings via uniffi-bindgen.
 - `docs/superpowers/` — design specs and implementation plans.
 - `LICENSE` — MIT.
@@ -62,35 +62,35 @@ swift package describe       # verify Package.swift parses
 
 ## Public API surface
 
-The Filer iOS app sees exactly:
+The Filum iOS app sees exactly:
 
-- `filer_crypto::Vault` (methods: `open`, `from_recovery_phrase`, `encrypt_blob`, `decrypt_blob`, `encrypt_metadata_field`, `decrypt_metadata_field`, `sign_challenge`, `device_public_key`)
-- `filer_crypto::recovery::{generate_master_secret, secret_to_phrase, phrase_to_secret}`
+- `filum_crypto::Vault` (methods: `open`, `from_recovery_phrase`, `encrypt_blob`, `decrypt_blob`, `encrypt_metadata_field`, `decrypt_metadata_field`, `sign_challenge`, `device_public_key`)
+- `filum_crypto::recovery::{generate_master_secret, secret_to_phrase, phrase_to_secret}`
 - Envelope structs `EncryptedBlob`, `EncryptedField`, `DeviceSignature`
-- `FilerCryptoError`
+- `FilumCryptoError`
 - `verify_signature` (so the backend can use the same verification path)
 
-If a symbol isn't `pub` from `crates/filer-crypto/src/lib.rs`, it isn't part of the Swift API. The UDL at `crates/filer-crypto-uniffi/src/filer_crypto.udl` is the source of truth for what's actually exposed across the FFI boundary.
+If a symbol isn't `pub` from `crates/filum-crypto/src/lib.rs`, it isn't part of the Swift API. The UDL at `crates/filum-crypto-uniffi/src/filum_crypto.udl` is the source of truth for what's actually exposed across the FFI boundary.
 
 ## Adding a new primitive
 
-1. Implement in its own module under `crates/filer-crypto/src/`.
+1. Implement in its own module under `crates/filum-crypto/src/`.
 2. Add round-trip tests + a known-answer test if standard vectors exist.
 3. Expose via `Vault` methods (preferred) or as a free function in `recovery.rs` (only if it's stateless and key-free).
-4. Update `crates/filer-crypto-uniffi/src/filer_crypto.udl` and `lib.rs` to mirror the new surface.
+4. Update `crates/filum-crypto-uniffi/src/filum_crypto.udl` and `lib.rs` to mirror the new surface.
 5. Regenerate Swift bindings: `./scripts/build.sh`.
-6. Commit the regenerated `Sources/FilerCrypto/*` alongside the Rust changes.
+6. Commit the regenerated `Sources/FilumCrypto/*` alongside the Rust changes.
 
 ## What not to add
 
 - **No async.** UniFFI sync is fine for v1; async adds FFI complexity for no payoff in our use cases (encrypt/decrypt are fast).
 - **No custom serialization formats.** Envelopes are simple structs of `Vec<u8>` + fixed-size byte arrays. Don't add CBOR, protobuf, or anything else.
-- **No extra binding targets in this repo.** Android and Wasm bindings, when needed, live in separate sibling crates added to the workspace. The core crate stays binding-agnostic. See [issue #3](https://github.com/CorvidSoft/filer-crypto/issues/3).
+- **No extra binding targets in this repo.** Android and Wasm bindings, when needed, live in separate sibling crates added to the workspace. The core crate stays binding-agnostic. See [issue #3](https://github.com/CorvidSoft/filum-crypto/issues/3).
 - **No panicking on user input.** See invariant #5.
 
 ## What's still ahead
 
-See [issue #3](https://github.com/CorvidSoft/filer-crypto/issues/3) for the tracked work — pre-built XCFramework distribution, real Swift parity tests, Android/Wasm bindings, fuzzing.
+See [issue #3](https://github.com/CorvidSoft/filum-crypto/issues/3) for the tracked work — pre-built XCFramework distribution, real Swift parity tests, Android/Wasm bindings, fuzzing.
 
 ## Reporting security issues
 
