@@ -1,16 +1,16 @@
 [package]
-name = "filer-crypto-uniffi"
+name = "filum-crypto-uniffi"
 version.workspace = true
 edition = "2021"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "UniFFI bindings for filer-crypto"
+description = "UniFFI bindings for filum-crypto"
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
-name = "filer_crypto"
-# Doc-tests are disabled: rustdoc sees two `filer_crypto` rlibs in the
+name = "filum_crypto"
+# Doc-tests are disabled: rustdoc sees two `filum_crypto` rlibs in the
 # workspace (core + this crate share the lib name) and fails with E0464.
 # Neither crate has doc-tests, so this is purely about suppressing the
 # spurious failure that rustdoc produces when running `cargo test --workspace`.
@@ -21,7 +21,7 @@ name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
-filer-crypto = { path = "../filer-crypto" }
+filum-crypto = { path = "../filum-crypto" }
 thiserror = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
 zeroize = { workspace = true }

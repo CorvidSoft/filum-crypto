@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use zeroize::Zeroizing;
 
-use crate::error::{FilerCryptoError, Result};
+use crate::error::{FilumCryptoError, Result};
 
 const VERSION: u8 = 1;
 /// `wrap_iv` (12 bytes) || AES-256-GCM(wrapping_key, wrap_iv, 32-byte data_key)
@@ -43,16 +43,16 @@ fn wrap_data_key(data_key: &[u8; 32], wrapping_key: &[u8; 32]) -> Result<[u8; WR
     let mut wrap_iv = [0u8; 12];
     OsRng
         .try_fill_bytes(&mut wrap_iv)
-        .map_err(|_| FilerCryptoError::Randomness)?;
+        .map_err(|_| FilumCryptoError::Randomness)?;
 
     let wrapper = Aes256Gcm::new(wrapping_key.into());
     let wrapped_key_ct = wrapper
         .encrypt(&wrap_iv.into(), data_key.as_slice())
-        .map_err(|_| FilerCryptoError::Aead)?;
+        .map_err(|_| FilumCryptoError::Aead)?;
 
     // 12-byte IV + 48-byte ciphertext+tag = 60 bytes.
     if wrapped_key_ct.len() != WRAPPED_KEY_LEN - 12 {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let mut out = [0u8; WRAPPED_KEY_LEN];
     out[..12].copy_from_slice(&wrap_iv);
@@ -64,7 +64,7 @@ fn wrap_data_key(data_key: &[u8; 32], wrapping_key: &[u8; 32]) -> Result<[u8; WR
 /// 32-byte data key. The result zeroizes on drop.
 fn unwrap_data_key(wrapped: &[u8], wrapping_key: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>> {
     if wrapped.len() != WRAPPED_KEY_LEN {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let (wrap_iv_bytes, wrapped_ct) = wrapped.split_at(12);
     let mut wrap_iv = [0u8; 12];
@@ -74,10 +74,10 @@ fn unwrap_data_key(wrapped: &[u8], wrapping_key: &[u8; 32]) -> Result<Zeroizing<
     let data_key_vec = Zeroizing::new(
         wrapper
             .decrypt(&wrap_iv.into(), wrapped_ct)
-            .map_err(|_| FilerCryptoError::Aead)?,
+            .map_err(|_| FilumCryptoError::Aead)?,
     );
     if data_key_vec.len() != 32 {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let mut data_key = Zeroizing::new([0u8; 32]);
     data_key.copy_from_slice(&data_key_vec);
@@ -100,11 +100,11 @@ pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<
     let mut data_key = Zeroizing::new([0u8; 32]);
     OsRng
         .try_fill_bytes(&mut data_key[..])
-        .map_err(|_| FilerCryptoError::Randomness)?;
+        .map_err(|_| FilumCryptoError::Randomness)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
     OsRng
         .try_fill_bytes(&mut nonce_prefix)
-        .map_err(|_| FilerCryptoError::Randomness)?;
+        .map_err(|_| FilumCryptoError::Randomness)?;
     let wrapped = wrap_data_key(&data_key, wrapping_key)?;
 
     let mut out = Vec::with_capacity(HEADER_LEN + plaintext.len() + 64);
@@ -126,12 +126,12 @@ pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<
         let start = i * CHUNK_SIZE;
         out.extend_from_slice(
             &enc.encrypt_next(&plaintext[start..start + CHUNK_SIZE])
-                .map_err(|_| FilerCryptoError::Aead)?,
+                .map_err(|_| FilumCryptoError::Aead)?,
         );
     }
     out.extend_from_slice(
         &enc.encrypt_last(&plaintext[full_chunks * CHUNK_SIZE..])
-            .map_err(|_| FilerCryptoError::Aead)?,
+            .map_err(|_| FilumCryptoError::Aead)?,
     );
     Ok(out)
 }
@@ -139,7 +139,7 @@ pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<
 /// Decrypt a chunked framed blob in memory.
 pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>> {
     if framed.len() < HEADER_LEN || framed[0] != VERSION {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let data_key = unwrap_data_key(&framed[1..1 + WRAPPED_KEY_LEN], wrapping_key)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
@@ -152,7 +152,7 @@ pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>
     // size to drive allocations/work — a tampered blob from an untrusted backend
     // could otherwise demand a huge buffer (fatal under the extension's 20 MB cap).
     if chunk_size != CHUNK_SIZE {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let ct_chunk = chunk_size + 16;
 
@@ -164,13 +164,13 @@ pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>
     let mut it = body.chunks(ct_chunk).peekable();
     if it.peek().is_none() {
         // Body must contain at least the final (>= 16-byte tag) segment.
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     while let Some(chunk) = it.next() {
         if it.peek().is_some() {
             out.extend_from_slice(
                 &dec.decrypt_next(chunk)
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             );
         } else {
             // `decrypt_last` consumes `dec`; this is necessarily the terminal
@@ -178,7 +178,7 @@ pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>
             // peeked-`None` else-arm runs exactly once).
             out.extend_from_slice(
                 &dec.decrypt_last(chunk)
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             );
             break;
         }
@@ -193,7 +193,7 @@ fn read_full<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<usize> {
     while filled < buf.len() {
         match r
             .read(&mut buf[filled..])
-            .map_err(|_| FilerCryptoError::Io)?
+            .map_err(|_| FilumCryptoError::Io)?
         {
             0 => break,
             k => filled += k,
@@ -208,21 +208,21 @@ pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     let mut data_key = Zeroizing::new([0u8; 32]);
     OsRng
         .try_fill_bytes(&mut data_key[..])
-        .map_err(|_| FilerCryptoError::Randomness)?;
+        .map_err(|_| FilumCryptoError::Randomness)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
     OsRng
         .try_fill_bytes(&mut nonce_prefix)
-        .map_err(|_| FilerCryptoError::Randomness)?;
+        .map_err(|_| FilumCryptoError::Randomness)?;
     let wrapped = wrap_data_key(&data_key, wrapping_key)?;
 
     let mut fin =
-        std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilerCryptoError::Io)?);
+        std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilumCryptoError::Io)?);
     let mut fout =
-        std::io::BufWriter::new(std::fs::File::create(output).map_err(|_| FilerCryptoError::Io)?);
+        std::io::BufWriter::new(std::fs::File::create(output).map_err(|_| FilumCryptoError::Io)?);
 
     let mut header = Vec::with_capacity(HEADER_LEN);
     write_header(&mut header, &wrapped, &nonce_prefix);
-    fout.write_all(&header).map_err(|_| FilerCryptoError::Io)?;
+    fout.write_all(&header).map_err(|_| FilumCryptoError::Io)?;
 
     let cipher = Aes256Gcm::new((&*data_key).into());
     let mut enc = EncryptorBE32::from_aead(cipher, (&nonce_prefix).into());
@@ -236,21 +236,21 @@ pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
         if let Some(prev) = pending.take() {
             fout.write_all(
                 &enc.encrypt_next(&prev[..])
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             )
-            .map_err(|_| FilerCryptoError::Io)?;
+            .map_err(|_| FilumCryptoError::Io)?;
         }
         if n < CHUNK_SIZE {
             fout.write_all(
                 &enc.encrypt_last(&buf[..n])
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             )
-            .map_err(|_| FilerCryptoError::Io)?;
+            .map_err(|_| FilumCryptoError::Io)?;
             break;
         }
         pending = Some(buf[..n].to_vec());
     }
-    fout.flush().map_err(|_| FilerCryptoError::Io)?;
+    fout.flush().map_err(|_| FilumCryptoError::Io)?;
     Ok(())
 }
 
@@ -258,12 +258,12 @@ pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
 /// ciphertext chunk through memory at a time.
 pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]) -> Result<()> {
     let mut fin =
-        std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilerCryptoError::Io)?);
+        std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilumCryptoError::Io)?);
     let mut header = [0u8; HEADER_LEN];
     fin.read_exact(&mut header)
-        .map_err(|_| FilerCryptoError::Io)?;
+        .map_err(|_| FilumCryptoError::Io)?;
     if header[0] != VERSION {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let data_key = unwrap_data_key(&header[1..1 + WRAPPED_KEY_LEN], wrapping_key)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
@@ -274,7 +274,7 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     // Reject an attacker-controlled chunk_size from the unauthenticated header
     // before it sizes the read buffer below (see decrypt_chunked for rationale).
     if chunk_size != CHUNK_SIZE {
-        return Err(FilerCryptoError::Aead);
+        return Err(FilumCryptoError::Aead);
     }
     let ct_chunk = chunk_size + 16;
 
@@ -282,7 +282,7 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     let mut dec = DecryptorBE32::from_aead(cipher, (&nonce_prefix).into());
 
     let mut fout =
-        std::io::BufWriter::new(std::fs::File::create(output).map_err(|_| FilerCryptoError::Io)?);
+        std::io::BufWriter::new(std::fs::File::create(output).map_err(|_| FilumCryptoError::Io)?);
 
     let mut buf = vec![0u8; ct_chunk];
     let mut pending: Option<Vec<u8>> = None;
@@ -291,21 +291,21 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
         if let Some(prev) = pending.take() {
             fout.write_all(
                 &dec.decrypt_next(&prev[..])
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             )
-            .map_err(|_| FilerCryptoError::Io)?;
+            .map_err(|_| FilumCryptoError::Io)?;
         }
         if n < ct_chunk {
             fout.write_all(
                 &dec.decrypt_last(&buf[..n])
-                    .map_err(|_| FilerCryptoError::Aead)?,
+                    .map_err(|_| FilumCryptoError::Aead)?,
             )
-            .map_err(|_| FilerCryptoError::Io)?;
+            .map_err(|_| FilumCryptoError::Io)?;
             break;
         }
         pending = Some(buf[..n].to_vec());
     }
-    fout.flush().map_err(|_| FilerCryptoError::Io)?;
+    fout.flush().map_err(|_| FilumCryptoError::Io)?;
     Ok(())
 }
 
@@ -396,7 +396,7 @@ mod tests {
         framed[HEADER_LEN + 10] ^= 1;
         assert!(matches!(
             decrypt_chunked(&framed, &key),
-            Err(FilerCryptoError::Aead)
+            Err(FilumCryptoError::Aead)
         ));
     }
 
@@ -408,7 +408,7 @@ mod tests {
         framed.truncate(framed.len() - 20);
         assert!(matches!(
             decrypt_chunked(&framed, &key),
-            Err(FilerCryptoError::Aead)
+            Err(FilumCryptoError::Aead)
         ));
     }
 
@@ -430,7 +430,7 @@ mod tests {
 
         assert!(matches!(
             decrypt_chunked(&tampered, &key),
-            Err(FilerCryptoError::Aead)
+            Err(FilumCryptoError::Aead)
         ));
     }
 
@@ -440,7 +440,7 @@ mod tests {
         let key2 = [43u8; 32];
         let framed = encrypt_chunked(b"some data", &key1).unwrap();
         let result = decrypt_chunked(&framed, &key2);
-        assert!(matches!(result, Err(FilerCryptoError::Aead)));
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
         tampered[cs_off..cs_off + 4].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
         assert!(matches!(
             decrypt_chunked(&tampered, &key),
-            Err(FilerCryptoError::Aead)
+            Err(FilumCryptoError::Aead)
         ));
     }
 

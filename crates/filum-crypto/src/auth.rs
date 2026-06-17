@@ -7,7 +7,7 @@
 
 use ed25519_dalek::{Signature, Signer, SigningKey};
 
-use crate::error::{FilerCryptoError, Result};
+use crate::error::{FilumCryptoError, Result};
 
 /// An Ed25519 signature produced by [`Vault::sign_challenge`].
 ///
@@ -46,10 +46,10 @@ pub(crate) fn public_key_bytes(key: &SigningKey) -> [u8; 32] {
 /// owns verification.
 pub fn verify_signature(public_key: &[u8; 32], nonce: &[u8], signature: &[u8; 64]) -> Result<()> {
     let vk = ed25519_dalek::VerifyingKey::from_bytes(public_key)
-        .map_err(|_| FilerCryptoError::InvalidSignature)?;
+        .map_err(|_| FilumCryptoError::InvalidSignature)?;
     let sig = Signature::from_bytes(signature);
     vk.verify_strict(nonce, &sig)
-        .map_err(|_| FilerCryptoError::InvalidSignature)
+        .map_err(|_| FilumCryptoError::InvalidSignature)
 }
 
 #[cfg(test)]
@@ -91,7 +91,7 @@ mod tests {
         let sig = sign_challenge(&key, b"nonce");
         let pk = public_key_bytes(&key);
         let result = verify_signature(&pk, b"different", &sig.bytes);
-        assert!(matches!(result, Err(FilerCryptoError::InvalidSignature)));
+        assert!(matches!(result, Err(FilumCryptoError::InvalidSignature)));
     }
 
     #[test]
@@ -103,13 +103,13 @@ mod tests {
         let mut bad = sig.bytes;
         bad[0] ^= 1;
         let result = verify_signature(&pk, b"nonce", &bad);
-        assert!(matches!(result, Err(FilerCryptoError::InvalidSignature)));
+        assert!(matches!(result, Err(FilumCryptoError::InvalidSignature)));
     }
 
     #[test]
     fn invalid_public_key_fails_verification() {
         // An all-zeros key is rejected by verify_strict.
         let result = verify_signature(&[0u8; 32], b"nonce", &[0u8; 64]);
-        assert!(matches!(result, Err(FilerCryptoError::InvalidSignature)));
+        assert!(matches!(result, Err(FilumCryptoError::InvalidSignature)));
     }
 }

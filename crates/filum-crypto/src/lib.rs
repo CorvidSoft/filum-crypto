@@ -1,6 +1,6 @@
-//! Filer cryptographic core.
+//! Filum cryptographic core.
 //!
-//! This crate is the pure-Rust core of `filer-crypto`. It exposes a single
+//! This crate is the pure-Rust core of `filum-crypto`. It exposes a single
 //! stateful type [`Vault`] that owns derived keys and provides envelope
 //! encryption + signing, plus stateless functions in the [`recovery`] module
 //! for BIP39 phrase ↔ master secret conversion.
@@ -19,6 +19,6 @@ pub use auth::{DeviceSignature, verify_signature};
 pub use blob::{
     CHUNK_SIZE, decrypt_chunked, decrypt_file_chunked, encrypt_chunked, encrypt_file_chunked,
 };
-pub use error::{FilerCryptoError, Result};
+pub use error::{FilumCryptoError, Result};
 pub use metadata::EncryptedField;
 pub use vault::Vault;

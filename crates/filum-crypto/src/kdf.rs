@@ -10,7 +10,7 @@
 use hkdf::Hkdf;
 use sha2::Sha256;
 
-use crate::error::{FilerCryptoError, Result};
+use crate::error::{FilumCryptoError, Result};
 
 /// HKDF info string for the data-key-wrapping subkey.
 pub(crate) const WRAP_CTX: &[u8] = b"filer-crypto/v1/wrap";
@@ -29,7 +29,7 @@ pub(crate) const SIGN_CTX: &[u8] = b"filer-crypto/v1/sign";
 pub(crate) fn derive_subkey(secret: &[u8], info: &[u8], out: &mut [u8]) -> Result<()> {
     let hkdf = Hkdf::<Sha256>::new(None, secret);
     hkdf.expand(info, out)
-        .map_err(|_| FilerCryptoError::InvalidKeyLength)
+        .map_err(|_| FilumCryptoError::InvalidKeyLength)
 }
 
 #[cfg(test)]

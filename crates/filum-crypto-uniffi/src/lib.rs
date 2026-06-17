@@ -1,8 +1,8 @@
-//! UniFFI binding layer for filer-crypto.
+//! UniFFI binding layer for filum-crypto.
 //!
 //! Each UDL type is mirrored here as a thin Rust type.
 //!
-//! `Vault` holds the core `filer_crypto::Vault` directly (no `Mutex`).
+//! `Vault` holds the core `filum_crypto::Vault` directly (no `Mutex`).
 //! UniFFI interface types must be `Send + Sync`; `CoreVault` satisfies both
 //! because all its fields (`Zeroizing<[u8; 32]>`, `Zeroizing<[u8; 32]>`,
 //! `SigningKey`) are themselves `Send + Sync`. None of the core's methods
@@ -12,31 +12,31 @@
 //!
 //! Byte arrays cross the FFI as `Vec<u8>`. We validate fixed-length inputs
 //! (32-byte secrets, 32-byte public keys, 64-byte signatures) inside the
-//! wrapper and return `FilerCryptoError::InvalidKeyLength` on mismatch.
+//! wrapper and return `FilumCryptoError::InvalidKeyLength` on mismatch.
 //!
 //! Secret material (master secrets) is wrapped in `Zeroizing` for the
 //! lifetime it sits in this layer. The incoming `Vec<u8>` from UniFFI's
 //! marshaling is taken by value; we wrap it in `Zeroizing` immediately so
 //! the heap allocation wipes on drop regardless of return path.
 
-use filer_crypto::{
+use filum_crypto::{
     recovery, DeviceSignature as CoreDeviceSignature, EncryptedField as CoreEncryptedField,
-    FilerCryptoError as CoreError, Vault as CoreVault,
+    FilumCryptoError as CoreError, Vault as CoreVault,
 };
 use zeroize::Zeroizing;
 
 // ---- Error type -------------------------------------------------------
 //
-// FilerCryptoError is declared HERE (not imported from the core crate) so
+// FilumCryptoError is declared HERE (not imported from the core crate) so
 // that `uniffi::include_scaffolding!` can apply `udl_derive(Error)` to the
 // local type name without violating Rust's orphan rules.
 
 /// All errors returned across the FFI boundary.
 ///
-/// Variants mirror `filer_crypto::FilerCryptoError` exactly, so a
+/// Variants mirror `filum_crypto::FilumCryptoError` exactly, so a
 /// `From` impl can convert with no loss of information.
 #[derive(Debug, thiserror::Error)]
-pub enum FilerCryptoError {
+pub enum FilumCryptoError {
     #[error("AEAD operation failed")]
     Aead,
     #[error("invalid recovery phrase")]
@@ -51,7 +51,7 @@ pub enum FilerCryptoError {
     Io,
 }
 
-impl From<CoreError> for FilerCryptoError {
+impl From<CoreError> for FilumCryptoError {
     fn from(e: CoreError) -> Self {
         match e {
             CoreError::Aead => Self::Aead,
@@ -64,7 +64,7 @@ impl From<CoreError> for FilerCryptoError {
     }
 }
 
-type Result<T> = std::result::Result<T, FilerCryptoError>;
+type Result<T> = std::result::Result<T, FilumCryptoError>;
 
 // ---- Dictionary types -------------------------------------------------
 //
@@ -89,11 +89,11 @@ impl From<CoreEncryptedField> for EncryptedField {
 }
 
 impl TryFrom<EncryptedField> for CoreEncryptedField {
-    type Error = FilerCryptoError;
+    type Error = FilumCryptoError;
     fn try_from(f: EncryptedField) -> Result<Self> {
         let iv: [u8; 12] =
             f.iv.try_into()
-                .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
+                .map_err(|_| FilumCryptoError::InvalidKeyLength)?;
         Ok(CoreEncryptedField {
             ciphertext: f.ciphertext,
             iv,
@@ -133,7 +133,7 @@ pub struct Vault {
 // MUST come after all type declarations above; the scaffolding's
 // #[udl_derive(...)] macros reference the names declared above.
 
-uniffi::include_scaffolding!("filer_crypto");
+uniffi::include_scaffolding!("filum_crypto");
 
 // ---- Helpers ----------------------------------------------------------
 
@@ -143,7 +143,7 @@ uniffi::include_scaffolding!("filer_crypto");
 fn vec_to_secret_array(bytes: Vec<u8>) -> Result<Zeroizing<[u8; 32]>> {
     let bytes = Zeroizing::new(bytes);
     if bytes.len() != 32 {
-        return Err(FilerCryptoError::InvalidKeyLength);
+        return Err(FilumCryptoError::InvalidKeyLength);
     }
     let mut array = Zeroizing::new([0u8; 32]);
     array.copy_from_slice(&bytes);
@@ -153,7 +153,7 @@ fn vec_to_secret_array(bytes: Vec<u8>) -> Result<Zeroizing<[u8; 32]>> {
 // ---- Top-level function implementations -------------------------------
 
 fn generate_master_secret() -> Result<Vec<u8>> {
-    let secret = recovery::generate_master_secret().map_err(FilerCryptoError::from)?;
+    let secret = recovery::generate_master_secret().map_err(FilumCryptoError::from)?;
     // Wrap in Zeroizing so the [u8;32] wipes when this scope ends; the
     // returned Vec is a fresh allocation owned by UniFFI's marshaler.
     let secret = Zeroizing::new(secret);
@@ -166,7 +166,7 @@ fn secret_to_phrase(secret: Vec<u8>) -> Result<String> {
 }
 
 fn phrase_to_secret(phrase: String) -> Result<Vec<u8>> {
-    let secret = recovery::phrase_to_secret(&phrase).map_err(FilerCryptoError::from)?;
+    let secret = recovery::phrase_to_secret(&phrase).map_err(FilumCryptoError::from)?;
     let secret = Zeroizing::new(secret);
     Ok(secret.to_vec())
 }
@@ -174,11 +174,11 @@ fn phrase_to_secret(phrase: String) -> Result<Vec<u8>> {
 fn verify_signature(public_key: Vec<u8>, nonce: Vec<u8>, signature: Vec<u8>) -> Result<()> {
     let pk: [u8; 32] = public_key
         .try_into()
-        .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
+        .map_err(|_| FilumCryptoError::InvalidKeyLength)?;
     let sig: [u8; 64] = signature
         .try_into()
-        .map_err(|_| FilerCryptoError::InvalidKeyLength)?;
-    filer_crypto::verify_signature(&pk, &nonce, &sig).map_err(Into::into)
+        .map_err(|_| FilumCryptoError::InvalidKeyLength)?;
+    filum_crypto::verify_signature(&pk, &nonce, &sig).map_err(Into::into)
 }
 
 // ---- Vault method implementations -------------------------------------
@@ -186,12 +186,12 @@ fn verify_signature(public_key: Vec<u8>, nonce: Vec<u8>, signature: Vec<u8>) -> 
 impl Vault {
     pub fn open(master_secret: Vec<u8>) -> Result<Self> {
         let array = vec_to_secret_array(master_secret)?;
-        let core = CoreVault::open(&array).map_err(FilerCryptoError::from)?;
+        let core = CoreVault::open(&array).map_err(FilumCryptoError::from)?;
         Ok(Self { inner: core })
     }
 
     pub fn from_recovery_phrase(phrase: String) -> Result<Self> {
-        let core = CoreVault::from_recovery_phrase(&phrase).map_err(FilerCryptoError::from)?;
+        let core = CoreVault::from_recovery_phrase(&phrase).map_err(FilumCryptoError::from)?;
         Ok(Self { inner: core })
     }
 
@@ -219,7 +219,7 @@ impl Vault {
         let core_field = self
             .inner
             .encrypt_metadata_field(&plaintext)
-            .map_err(FilerCryptoError::from)?;
+            .map_err(FilumCryptoError::from)?;
         Ok(core_field.into())
     }
 
@@ -227,7 +227,7 @@ impl Vault {
         let core_field: CoreEncryptedField = field.try_into()?;
         self.inner
             .decrypt_metadata_field(&core_field)
-            .map_err(FilerCryptoError::from)
+            .map_err(FilumCryptoError::from)
     }
 
     pub fn sign_challenge(&self, nonce: Vec<u8>) -> DeviceSignature {

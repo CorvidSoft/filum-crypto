@@ -3,7 +3,7 @@
 //! Produces the JSON files in `Tests/FilerCryptoTests/Fixtures/` that the
 //! Swift parity tests decrypt and verify. Run with:
 //!
-//!     cargo test -p filer-crypto --test generate_fixtures -- --ignored --nocapture
+//!     cargo test -p filum-crypto --test generate_fixtures -- --ignored --nocapture
 //!
 //! Uses an all-zero master secret — the standard "obvious test vector"
 //! sentinel. Never use this secret for real keys.
@@ -22,7 +22,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use filer_crypto::{Vault, recovery, verify_signature};
+use filum_crypto::{Vault, recovery, verify_signature};
 use serde::Serialize;
 
 const FIXTURE_MASTER_SECRET: [u8; 32] = [0u8; 32];
@@ -57,7 +57,7 @@ struct SignatureFixture {
 }
 
 fn fixtures_dir() -> PathBuf {
-    // CARGO_MANIFEST_DIR is crates/filer-crypto/. Walk up two levels to repo root.
+    // CARGO_MANIFEST_DIR is crates/filum-crypto/. Walk up two levels to repo root.
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -73,7 +73,7 @@ fn write_json<T: Serialize>(path: PathBuf, value: &T) {
 }
 
 #[test]
-#[ignore = "regenerate with: cargo test -p filer-crypto --test generate_fixtures -- --ignored --nocapture"]
+#[ignore = "regenerate with: cargo test -p filum-crypto --test generate_fixtures -- --ignored --nocapture"]
 fn regenerate_fixtures() {
     let dir = fixtures_dir();
     fs::create_dir_all(&dir).expect("mkdir fixtures");

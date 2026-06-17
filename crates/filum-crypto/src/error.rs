@@ -6,7 +6,7 @@ use thiserror::Error;
 /// We do not expose cause chains or position info because they could leak
 /// information about key material or input shape.
 #[derive(Debug, Error)]
-pub enum FilerCryptoError {
+pub enum FilumCryptoError {
     /// AEAD encryption or decryption failed. The same variant covers both
     /// directions because the AEAD library returns the same opaque error type
     /// for either, and exposing more detail risks leaking timing or position
@@ -31,4 +31,4 @@ pub enum FilerCryptoError {
     Io,
 }
 
-pub type Result<T> = std::result::Result<T, FilerCryptoError>;
+pub type Result<T> = std::result::Result<T, FilumCryptoError>;

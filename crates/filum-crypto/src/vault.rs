@@ -1,4 +1,4 @@
-//! The `Vault` is the top-level stateful API of `filer-crypto`.
+//! The `Vault` is the top-level stateful API of `filum-crypto`.
 //!
 //! Construct it with either a 32-byte master secret or a 24-word BIP39
 //! recovery phrase. On construction it derives all needed subkeys via HKDF
@@ -167,7 +167,7 @@ mod tests {
         let result = Vault::from_recovery_phrase("not a real phrase");
         assert!(matches!(
             result,
-            Err(crate::FilerCryptoError::InvalidPhrase)
+            Err(crate::FilumCryptoError::InvalidPhrase)
         ));
     }
 
@@ -180,7 +180,7 @@ mod tests {
 
         let framed = vault_a.encrypt_blob(b"secret data").unwrap();
         let result = vault_b.decrypt_blob(&framed);
-        assert!(matches!(result, Err(crate::FilerCryptoError::Aead)));
+        assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 
     #[test]
@@ -190,6 +190,6 @@ mod tests {
 
         let field = vault_a.encrypt_metadata_field(b"name").unwrap();
         let result = vault_b.decrypt_metadata_field(&field);
-        assert!(matches!(result, Err(crate::FilerCryptoError::Aead)));
+        assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 }

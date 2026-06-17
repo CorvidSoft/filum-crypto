@@ -1,19 +1,19 @@
-namespace filer_crypto {
-    [Throws=FilerCryptoError]
+namespace filum_crypto {
+    [Throws=FilumCryptoError]
     sequence<u8> generate_master_secret();
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     string secret_to_phrase(sequence<u8> secret);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     sequence<u8> phrase_to_secret(string phrase);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     void verify_signature(sequence<u8> public_key, sequence<u8> nonce, sequence<u8> signature);
 };
 
 [Error]
-enum FilerCryptoError {
+enum FilumCryptoError {
     "Aead",
     "InvalidPhrase",
     "InvalidKeyLength",
@@ -32,28 +32,28 @@ dictionary DeviceSignature {
 };
 
 interface Vault {
-    [Throws=FilerCryptoError, Name=open]
+    [Throws=FilumCryptoError, Name=open]
     constructor(sequence<u8> master_secret);
 
-    [Throws=FilerCryptoError, Name=from_recovery_phrase]
+    [Throws=FilumCryptoError, Name=from_recovery_phrase]
     constructor(string phrase);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     bytes encrypt_blob(bytes plaintext);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     bytes decrypt_blob(bytes framed);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     void encrypt_file_to_blob(string in_path, string out_path);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     void decrypt_blob_to_file(string in_path, string out_path);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     EncryptedField encrypt_metadata_field(bytes plaintext);
 
-    [Throws=FilerCryptoError]
+    [Throws=FilumCryptoError]
     bytes decrypt_metadata_field(EncryptedField field);
 
     DeviceSignature sign_challenge(sequence<u8> nonce);
