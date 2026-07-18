@@ -18,6 +18,11 @@ pub enum FilumCryptoError {
     Aead,
     #[error("invalid recovery phrase")]
     InvalidPhrase,
+    /// A caller-supplied context identifier (blob id, record id, field name)
+    /// is unusable for AAD construction — empty, or too long to length-prefix.
+    /// The message never includes the identifier itself.
+    #[error("invalid context identifier")]
+    InvalidContext,
     #[error("invalid key length")]
     InvalidKeyLength,
     #[error("invalid signature")]

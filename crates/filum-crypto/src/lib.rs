@@ -7,6 +7,7 @@
 //!
 //! All other modules are crate-private.
 
+mod aad;
 mod auth;
 mod blob;
 mod error;
