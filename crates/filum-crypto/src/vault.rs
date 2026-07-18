@@ -76,12 +76,22 @@ impl Vault {
         blob::decrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key, blob_id)
     }
 
-    pub fn encrypt_metadata_field(&self, plaintext: &[u8]) -> Result<EncryptedField> {
-        metadata::encrypt_field(plaintext, &self.metadata_key)
+    pub fn encrypt_metadata_field(
+        &self,
+        plaintext: &[u8],
+        record_id: &str,
+        field_name: &str,
+    ) -> Result<EncryptedField> {
+        metadata::encrypt_field(plaintext, &self.metadata_key, record_id, field_name)
     }
 
-    pub fn decrypt_metadata_field(&self, field: &EncryptedField) -> Result<Vec<u8>> {
-        metadata::decrypt_field(field, &self.metadata_key)
+    pub fn decrypt_metadata_field(
+        &self,
+        field: &EncryptedField,
+        record_id: &str,
+        field_name: &str,
+    ) -> Result<Vec<u8>> {
+        metadata::decrypt_field(field, &self.metadata_key, record_id, field_name)
     }
 
     pub fn sign_challenge(&self, nonce: &[u8]) -> DeviceSignature {

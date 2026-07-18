@@ -102,10 +102,10 @@ fn regenerate_fixtures() {
     // --- Metadata field fixture ---
     let field_plaintext = b"filer-crypto v1 metadata fixture".to_vec();
     let field = vault
-        .encrypt_metadata_field(&field_plaintext)
+        .encrypt_metadata_field(&field_plaintext, "fixture-record-id", "fixture-field")
         .expect("encrypt metadata");
     let recovered = vault
-        .decrypt_metadata_field(&field)
+        .decrypt_metadata_field(&field, "fixture-record-id", "fixture-field")
         .expect("decrypt metadata");
     assert_eq!(recovered, field_plaintext);
     write_json(

@@ -1,12 +1,23 @@
-//! AES-256-GCM field-level metadata encryption.
+//! AES-256-GCM field-level metadata encryption (format v2).
 //!
 //! Used to encrypt sensitive SQLite columns (filenames, document types,
 //! extracted fields). The metadata key is derived from the master secret
 //! via HKDF and is independent of the wrapping key used for blobs.
+//!
+//! Every field is bound to its sync record and field name via AAD
+//! ([`crate::aad::field_aad`]): a ciphertext transplanted to a different
+//! record id or field name fails authentication with
+//! [`FilumCryptoError::Aead`]. The [`EncryptedField`] envelope itself is
+//! unchanged from v1 (no version byte); a v1 ciphertext simply fails AEAD
+//! under the new AAD.
 
-use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+use aes_gcm::{
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Payload},
+};
 use rand_core::{OsRng, RngCore};
 
+use crate::aad;
 use crate::error::{FilumCryptoError, Result};
 
 /// The encrypted-field envelope. Structurally mirrors the `EncryptedSyncRecord`
@@ -17,22 +28,47 @@ pub struct EncryptedField {
     pub iv: [u8; 12],
 }
 
-pub(crate) fn encrypt_field(plaintext: &[u8], key: &[u8; 32]) -> Result<EncryptedField> {
+pub(crate) fn encrypt_field(
+    plaintext: &[u8],
+    key: &[u8; 32],
+    record_id: &str,
+    field_name: &str,
+) -> Result<EncryptedField> {
+    // Context validation happens before any randomness or cipher work.
+    let aad = aad::field_aad(record_id, field_name)?;
     let cipher = Aes256Gcm::new(key.into());
     let mut iv = [0u8; 12];
     OsRng
         .try_fill_bytes(&mut iv)
         .map_err(|_| FilumCryptoError::Randomness)?;
     let ciphertext = cipher
-        .encrypt(&iv.into(), plaintext)
+        .encrypt(
+            &iv.into(),
+            Payload {
+                msg: plaintext,
+                aad: &aad,
+            },
+        )
         .map_err(|_| FilumCryptoError::Aead)?;
     Ok(EncryptedField { ciphertext, iv })
 }
 
-pub(crate) fn decrypt_field(field: &EncryptedField, key: &[u8; 32]) -> Result<Vec<u8>> {
+pub(crate) fn decrypt_field(
+    field: &EncryptedField,
+    key: &[u8; 32],
+    record_id: &str,
+    field_name: &str,
+) -> Result<Vec<u8>> {
+    let aad = aad::field_aad(record_id, field_name)?;
     let cipher = Aes256Gcm::new(key.into());
     cipher
-        .decrypt(&field.iv.into(), field.ciphertext.as_slice())
+        .decrypt(
+            &field.iv.into(),
+            Payload {
+                msg: field.ciphertext.as_slice(),
+                aad: &aad,
+            },
+        )
         .map_err(|_| FilumCryptoError::Aead)
 }
 
