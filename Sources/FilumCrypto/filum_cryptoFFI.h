@@ -265,17 +265,17 @@ uint64_t uniffi_filum_crypto_fn_constructor_vault_open(RustBuffer master_secret,
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_BLOB
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_BLOB
-RustBuffer uniffi_filum_crypto_fn_method_vault_decrypt_blob(uint64_t ptr, RustBuffer framed, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_filum_crypto_fn_method_vault_decrypt_blob(uint64_t ptr, RustBuffer framed, RustBuffer blob_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_BLOB_TO_FILE
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_BLOB_TO_FILE
-void uniffi_filum_crypto_fn_method_vault_decrypt_blob_to_file(uint64_t ptr, RustBuffer in_path, RustBuffer out_path, RustCallStatus *_Nonnull out_status
+void uniffi_filum_crypto_fn_method_vault_decrypt_blob_to_file(uint64_t ptr, RustBuffer in_path, RustBuffer out_path, RustBuffer blob_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_METADATA_FIELD
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DECRYPT_METADATA_FIELD
-RustBuffer uniffi_filum_crypto_fn_method_vault_decrypt_metadata_field(uint64_t ptr, RustBuffer field, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_filum_crypto_fn_method_vault_decrypt_metadata_field(uint64_t ptr, RustBuffer field, RustBuffer record_id, RustBuffer field_name, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_DEVICE_PUBLIC_KEY
@@ -285,17 +285,17 @@ RustBuffer uniffi_filum_crypto_fn_method_vault_device_public_key(uint64_t ptr, R
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_BLOB
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_BLOB
-RustBuffer uniffi_filum_crypto_fn_method_vault_encrypt_blob(uint64_t ptr, RustBuffer plaintext, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_filum_crypto_fn_method_vault_encrypt_blob(uint64_t ptr, RustBuffer plaintext, RustBuffer blob_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_FILE_TO_BLOB
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_FILE_TO_BLOB
-void uniffi_filum_crypto_fn_method_vault_encrypt_file_to_blob(uint64_t ptr, RustBuffer in_path, RustBuffer out_path, RustCallStatus *_Nonnull out_status
+void uniffi_filum_crypto_fn_method_vault_encrypt_file_to_blob(uint64_t ptr, RustBuffer in_path, RustBuffer out_path, RustBuffer blob_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_METADATA_FIELD
 #define UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_ENCRYPT_METADATA_FIELD
-RustBuffer uniffi_filum_crypto_fn_method_vault_encrypt_metadata_field(uint64_t ptr, RustBuffer plaintext, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_filum_crypto_fn_method_vault_encrypt_metadata_field(uint64_t ptr, RustBuffer plaintext, RustBuffer record_id, RustBuffer field_name, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FILUM_CRYPTO_FN_METHOD_VAULT_SIGN_CHALLENGE

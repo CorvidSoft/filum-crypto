@@ -41,6 +41,8 @@ pub enum FilumCryptoError {
     Aead,
     #[error("invalid recovery phrase")]
     InvalidPhrase,
+    #[error("invalid context identifier")]
+    InvalidContext,
     #[error("invalid key length")]
     InvalidKeyLength,
     #[error("invalid signature")]
@@ -56,6 +58,7 @@ impl From<CoreError> for FilumCryptoError {
         match e {
             CoreError::Aead => Self::Aead,
             CoreError::InvalidPhrase => Self::InvalidPhrase,
+            CoreError::InvalidContext => Self::InvalidContext,
             CoreError::InvalidKeyLength => Self::InvalidKeyLength,
             CoreError::InvalidSignature => Self::InvalidSignature,
             CoreError::Randomness => Self::Randomness,
@@ -195,38 +198,62 @@ impl Vault {
         Ok(Self { inner: core })
     }
 
-    pub fn encrypt_blob(&self, plaintext: Vec<u8>) -> Result<Vec<u8>> {
-        self.inner.encrypt_blob(&plaintext).map_err(Into::into)
-    }
-
-    pub fn decrypt_blob(&self, framed: Vec<u8>) -> Result<Vec<u8>> {
-        self.inner.decrypt_blob(&framed).map_err(Into::into)
-    }
-
-    pub fn encrypt_file_to_blob(&self, in_path: String, out_path: String) -> Result<()> {
+    pub fn encrypt_blob(&self, plaintext: Vec<u8>, blob_id: String) -> Result<Vec<u8>> {
         self.inner
-            .encrypt_file_to_blob(&in_path, &out_path)
+            .encrypt_blob(&plaintext, &blob_id)
             .map_err(Into::into)
     }
 
-    pub fn decrypt_blob_to_file(&self, in_path: String, out_path: String) -> Result<()> {
+    pub fn decrypt_blob(&self, framed: Vec<u8>, blob_id: String) -> Result<Vec<u8>> {
         self.inner
-            .decrypt_blob_to_file(&in_path, &out_path)
+            .decrypt_blob(&framed, &blob_id)
             .map_err(Into::into)
     }
 
-    pub fn encrypt_metadata_field(&self, plaintext: Vec<u8>) -> Result<EncryptedField> {
+    pub fn encrypt_file_to_blob(
+        &self,
+        in_path: String,
+        out_path: String,
+        blob_id: String,
+    ) -> Result<()> {
+        self.inner
+            .encrypt_file_to_blob(&in_path, &out_path, &blob_id)
+            .map_err(Into::into)
+    }
+
+    pub fn decrypt_blob_to_file(
+        &self,
+        in_path: String,
+        out_path: String,
+        blob_id: String,
+    ) -> Result<()> {
+        self.inner
+            .decrypt_blob_to_file(&in_path, &out_path, &blob_id)
+            .map_err(Into::into)
+    }
+
+    pub fn encrypt_metadata_field(
+        &self,
+        plaintext: Vec<u8>,
+        record_id: String,
+        field_name: String,
+    ) -> Result<EncryptedField> {
         let core_field = self
             .inner
-            .encrypt_metadata_field(&plaintext)
+            .encrypt_metadata_field(&plaintext, &record_id, &field_name)
             .map_err(FilumCryptoError::from)?;
         Ok(core_field.into())
     }
 
-    pub fn decrypt_metadata_field(&self, field: EncryptedField) -> Result<Vec<u8>> {
+    pub fn decrypt_metadata_field(
+        &self,
+        field: EncryptedField,
+        record_id: String,
+        field_name: String,
+    ) -> Result<Vec<u8>> {
         let core_field: CoreEncryptedField = field.try_into()?;
         self.inner
-            .decrypt_metadata_field(&core_field)
+            .decrypt_metadata_field(&core_field, &record_id, &field_name)
             .map_err(FilumCryptoError::from)
     }
 

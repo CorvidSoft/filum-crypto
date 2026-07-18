@@ -496,19 +496,19 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 public protocol VaultProtocol: AnyObject, Sendable {
     
-    func decryptBlob(framed: Data) throws  -> Data
+    func decryptBlob(framed: Data, blobId: String) throws  -> Data
     
-    func decryptBlobToFile(inPath: String, outPath: String) throws 
+    func decryptBlobToFile(inPath: String, outPath: String, blobId: String) throws 
     
-    func decryptMetadataField(field: EncryptedField) throws  -> Data
+    func decryptMetadataField(field: EncryptedField, recordId: String, fieldName: String) throws  -> Data
     
     func devicePublicKey()  -> [UInt8]
     
-    func encryptBlob(plaintext: Data) throws  -> Data
+    func encryptBlob(plaintext: Data, blobId: String) throws  -> Data
     
-    func encryptFileToBlob(inPath: String, outPath: String) throws 
+    func encryptFileToBlob(inPath: String, outPath: String, blobId: String) throws 
     
-    func encryptMetadataField(plaintext: Data) throws  -> EncryptedField
+    func encryptMetadataField(plaintext: Data, recordId: String, fieldName: String) throws  -> EncryptedField
     
     func signChallenge(nonce: [UInt8])  -> DeviceSignature
     
@@ -582,29 +582,33 @@ public static func `open`(masterSecret: [UInt8])throws  -> Vault  {
     
 
     
-open func decryptBlob(framed: Data)throws  -> Data  {
+open func decryptBlob(framed: Data, blobId: String)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_decrypt_blob(
             self.uniffiCloneHandle(),
-        FfiConverterData.lower(framed),$0
+        FfiConverterData.lower(framed),
+        FfiConverterString.lower(blobId),$0
     )
 })
 }
     
-open func decryptBlobToFile(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+open func decryptBlobToFile(inPath: String, outPath: String, blobId: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_decrypt_blob_to_file(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(inPath),
-        FfiConverterString.lower(outPath),$0
+        FfiConverterString.lower(outPath),
+        FfiConverterString.lower(blobId),$0
     )
 }
 }
     
-open func decryptMetadataField(field: EncryptedField)throws  -> Data  {
+open func decryptMetadataField(field: EncryptedField, recordId: String, fieldName: String)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_decrypt_metadata_field(
             self.uniffiCloneHandle(),
-        FfiConverterTypeEncryptedField_lower(field),$0
+        FfiConverterTypeEncryptedField_lower(field),
+        FfiConverterString.lower(recordId),
+        FfiConverterString.lower(fieldName),$0
     )
 })
 }
@@ -617,29 +621,33 @@ open func devicePublicKey() -> [UInt8]  {
 })
 }
     
-open func encryptBlob(plaintext: Data)throws  -> Data  {
+open func encryptBlob(plaintext: Data, blobId: String)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_encrypt_blob(
             self.uniffiCloneHandle(),
-        FfiConverterData.lower(plaintext),$0
+        FfiConverterData.lower(plaintext),
+        FfiConverterString.lower(blobId),$0
     )
 })
 }
     
-open func encryptFileToBlob(inPath: String, outPath: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
+open func encryptFileToBlob(inPath: String, outPath: String, blobId: String)throws   {try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_encrypt_file_to_blob(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(inPath),
-        FfiConverterString.lower(outPath),$0
+        FfiConverterString.lower(outPath),
+        FfiConverterString.lower(blobId),$0
     )
 }
 }
     
-open func encryptMetadataField(plaintext: Data)throws  -> EncryptedField  {
+open func encryptMetadataField(plaintext: Data, recordId: String, fieldName: String)throws  -> EncryptedField  {
     return try  FfiConverterTypeEncryptedField_lift(try rustCallWithError(FfiConverterTypeFilumCryptoError_lift) {
     uniffi_filum_crypto_fn_method_vault_encrypt_metadata_field(
             self.uniffiCloneHandle(),
-        FfiConverterData.lower(plaintext),$0
+        FfiConverterData.lower(plaintext),
+        FfiConverterString.lower(recordId),
+        FfiConverterString.lower(fieldName),$0
     )
 })
 }
@@ -813,6 +821,8 @@ public enum FilumCryptoError: Swift.Error, Equatable, Hashable, Foundation.Local
     
     case InvalidPhrase(message: String)
     
+    case InvalidContext(message: String)
+    
     case InvalidKeyLength(message: String)
     
     case InvalidSignature(message: String)
@@ -858,19 +868,23 @@ public struct FfiConverterTypeFilumCryptoError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 3: return .InvalidKeyLength(
+        case 3: return .InvalidContext(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 4: return .InvalidSignature(
+        case 4: return .InvalidKeyLength(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 5: return .Randomness(
+        case 5: return .InvalidSignature(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 6: return .Io(
+        case 6: return .Randomness(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .Io(
             message: try FfiConverterString.read(from: &buf)
         )
         
@@ -889,14 +903,16 @@ public struct FfiConverterTypeFilumCryptoError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(1))
         case .InvalidPhrase(_ /* message is ignored*/):
             writeInt(&buf, Int32(2))
-        case .InvalidKeyLength(_ /* message is ignored*/):
+        case .InvalidContext(_ /* message is ignored*/):
             writeInt(&buf, Int32(3))
-        case .InvalidSignature(_ /* message is ignored*/):
+        case .InvalidKeyLength(_ /* message is ignored*/):
             writeInt(&buf, Int32(4))
-        case .Randomness(_ /* message is ignored*/):
+        case .InvalidSignature(_ /* message is ignored*/):
             writeInt(&buf, Int32(5))
-        case .Io(_ /* message is ignored*/):
+        case .Randomness(_ /* message is ignored*/):
             writeInt(&buf, Int32(6))
+        case .Io(_ /* message is ignored*/):
+            writeInt(&buf, Int32(7))
 
         
         }
@@ -998,25 +1014,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_filum_crypto_checksum_func_verify_signature() != 24993) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob() != 60168) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob() != 5076) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob_to_file() != 35959) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_blob_to_file() != 39989) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_decrypt_metadata_field() != 46268) {
+    if (uniffi_filum_crypto_checksum_method_vault_decrypt_metadata_field() != 7835) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filum_crypto_checksum_method_vault_device_public_key() != 23383) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_encrypt_blob() != 51246) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_blob() != 30932) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_encrypt_file_to_blob() != 35809) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_file_to_blob() != 42661) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_filum_crypto_checksum_method_vault_encrypt_metadata_field() != 1060) {
+    if (uniffi_filum_crypto_checksum_method_vault_encrypt_metadata_field() != 40529) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_filum_crypto_checksum_method_vault_sign_challenge() != 40914) {
