@@ -346,8 +346,48 @@ pub fn encrypt_file_chunked(
     Ok(())
 }
 
+/// Best-effort deletion of an in-progress temp file on any early exit
+/// (error return or unwind). Disarmed once the temp file has been renamed
+/// into place.
+struct TempCleanup<'a> {
+    path: &'a Path,
+    armed: bool,
+}
+
+impl Drop for TempCleanup<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(self.path);
+        }
+    }
+}
+
+/// Build a sibling temp path for `output` (same directory, so the final
+/// `rename` never crosses a filesystem boundary). A random suffix keeps
+/// concurrent decrypts targeting the same destination from clobbering each
+/// other's temp files.
+fn sibling_temp_path(output: &Path) -> Result<std::path::PathBuf> {
+    let mut suffix = [0u8; 8];
+    OsRng
+        .try_fill_bytes(&mut suffix)
+        .map_err(|_| FilumCryptoError::Randomness)?;
+    let mut name = output
+        .file_name()
+        .ok_or(FilumCryptoError::Io)?
+        .to_os_string();
+    name.push(format!(".{:016x}.part", u64::from_be_bytes(suffix)));
+    Ok(output.with_file_name(name))
+}
+
 /// Decrypt a chunked framed file `input` to `output`, streaming a single
 /// ciphertext chunk through memory at a time.
+///
+/// Atomic with respect to `output`: plaintext streams to a sibling `*.part`
+/// temp file that is renamed into place only after the terminal segment
+/// authenticates and the contents are flushed and fsynced — a file exists at
+/// `output` iff it is complete, fully authenticated plaintext. On any failure
+/// the temp file is removed (best effort) and `output` is left untouched; an
+/// interrupted process leaves at worst an orphaned `*.part` file.
 pub fn decrypt_file_chunked(
     input: &Path,
     output: &Path,
@@ -390,8 +430,15 @@ pub fn decrypt_file_chunked(
     let cipher = Aes256Gcm::new((&*data_key).into());
     let mut dec = DecryptorBE32::from_aead(cipher, (&nonce_prefix).into());
 
+    // The data key was unwrapped above, BEFORE any file is created — a
+    // wrong-key failure creates nothing at all, not even a temp file.
+    let tmp = sibling_temp_path(output)?;
+    let mut cleanup = TempCleanup {
+        path: &tmp,
+        armed: true,
+    };
     let mut fout =
-        std::io::BufWriter::new(std::fs::File::create(output).map_err(|_| FilumCryptoError::Io)?);
+        std::io::BufWriter::new(std::fs::File::create(&tmp).map_err(|_| FilumCryptoError::Io)?);
 
     let mut buf = vec![0u8; ct_chunk];
     let mut pending: Option<Vec<u8>> = None;
@@ -421,6 +468,14 @@ pub fn decrypt_file_chunked(
         pending = Some(buf[..n].to_vec());
     }
     fout.flush().map_err(|_| FilumCryptoError::Io)?;
+    // Push the contents to disk before the rename publishes the file, so a
+    // crash right after the rename cannot surface a truncated `output`.
+    fout.get_ref()
+        .sync_all()
+        .map_err(|_| FilumCryptoError::Io)?;
+    drop(fout);
+    std::fs::rename(&tmp, output).map_err(|_| FilumCryptoError::Io)?;
+    cleanup.armed = false;
     Ok(())
 }
 
@@ -716,6 +771,104 @@ mod tests {
             decrypt_chunked(&tampered, &key, BLOB_ID),
             Err(FilumCryptoError::Aead)
         ));
+    }
+
+    /// Assert `dir` contains exactly `expected` entries — no partial plaintext
+    /// at the destination and no orphaned temp files.
+    fn assert_dir_contains_exactly(dir: &Path, expected: &[&str]) {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+        want.sort();
+        assert_eq!(names, want, "unexpected directory contents");
+    }
+
+    #[test]
+    fn decrypt_file_success_leaves_only_output() {
+        let key = [42u8; 32];
+        let pt = make_plaintext(3 * CHUNK_SIZE + 7);
+        let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let enc_path = dir.path().join("blob.enc");
+        std::fs::write(&enc_path, &framed).unwrap();
+        let out_path = dir.path().join("out.bin");
+
+        decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID).unwrap();
+
+        let recovered = std::fs::read(&out_path).unwrap();
+        assert_eq!(
+            recovered, pt,
+            "successful decrypt must produce the full file"
+        );
+        assert_dir_contains_exactly(dir.path(), &["blob.enc", "out.bin"]);
+    }
+
+    #[test]
+    fn decrypt_file_truncated_at_segment_boundary_leaves_no_output() {
+        let key = [42u8; 32];
+        let pt = make_plaintext(3 * CHUNK_SIZE + 7);
+        let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let enc_path = dir.path().join("blob.enc");
+        // Cut cleanly at a segment boundary: header + 2 full ciphertext
+        // segments. Every `decrypt_next` authenticates; only the terminal
+        // `decrypt_last` fails.
+        let cut = HEADER_LEN + 2 * (CHUNK_SIZE + 16);
+        std::fs::write(&enc_path, &framed[..cut]).unwrap();
+        let out_path = dir.path().join("out.bin");
+
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID);
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
+        assert!(
+            !out_path.exists(),
+            "failed decrypt must not leave partial plaintext at out_path"
+        );
+        assert_dir_contains_exactly(dir.path(), &["blob.enc"]);
+    }
+
+    #[test]
+    fn decrypt_file_tampered_midstream_leaves_no_output() {
+        let key = [42u8; 32];
+        let pt = make_plaintext(2 * CHUNK_SIZE + 100);
+        let mut framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
+        // Flip a byte inside the SECOND ciphertext segment so the first
+        // segment authenticates and decrypts before the failure.
+        framed[HEADER_LEN + (CHUNK_SIZE + 16) + 10] ^= 1;
+
+        let dir = tempfile::tempdir().unwrap();
+        let enc_path = dir.path().join("blob.enc");
+        std::fs::write(&enc_path, &framed).unwrap();
+        let out_path = dir.path().join("out.bin");
+
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID);
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
+        assert!(
+            !out_path.exists(),
+            "failed decrypt must not leave partial plaintext at out_path"
+        );
+        assert_dir_contains_exactly(dir.path(), &["blob.enc"]);
+    }
+
+    #[test]
+    fn decrypt_file_wrong_key_creates_no_files() {
+        let key1 = [42u8; 32];
+        let key2 = [43u8; 32];
+        let framed = encrypt_chunked(b"some data", &key1, BLOB_ID).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let enc_path = dir.path().join("blob.enc");
+        std::fs::write(&enc_path, &framed).unwrap();
+        let out_path = dir.path().join("out.bin");
+
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key2, BLOB_ID);
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
+        // Key unwrap fails before any output file (temp included) is created.
+        assert_dir_contains_exactly(dir.path(), &["blob.enc"]);
     }
 
     #[test]
