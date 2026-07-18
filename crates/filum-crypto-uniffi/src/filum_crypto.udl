@@ -16,6 +16,7 @@ namespace filum_crypto {
 enum FilumCryptoError {
     "Aead",
     "InvalidPhrase",
+    "InvalidContext",
     "InvalidKeyLength",
     "InvalidSignature",
     "Randomness",
@@ -39,22 +40,22 @@ interface Vault {
     constructor(string phrase);
 
     [Throws=FilumCryptoError]
-    bytes encrypt_blob(bytes plaintext);
+    bytes encrypt_blob(bytes plaintext, string blob_id);
 
     [Throws=FilumCryptoError]
-    bytes decrypt_blob(bytes framed);
+    bytes decrypt_blob(bytes framed, string blob_id);
 
     [Throws=FilumCryptoError]
-    void encrypt_file_to_blob(string in_path, string out_path);
+    void encrypt_file_to_blob(string in_path, string out_path, string blob_id);
 
     [Throws=FilumCryptoError]
-    void decrypt_blob_to_file(string in_path, string out_path);
+    void decrypt_blob_to_file(string in_path, string out_path, string blob_id);
 
     [Throws=FilumCryptoError]
-    EncryptedField encrypt_metadata_field(bytes plaintext);
+    EncryptedField encrypt_metadata_field(bytes plaintext, string record_id, string field_name);
 
     [Throws=FilumCryptoError]
-    bytes decrypt_metadata_field(EncryptedField field);
+    bytes decrypt_metadata_field(EncryptedField field, string record_id, string field_name);
 
     DeviceSignature sign_challenge(sequence<u8> nonce);
 

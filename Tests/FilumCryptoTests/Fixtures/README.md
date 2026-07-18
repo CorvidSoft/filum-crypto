@@ -2,7 +2,7 @@
 
 Cross-language test vectors used by `CrossLanguageFixtureTests.swift` to
 prove that a Rust-encrypted envelope decrypts correctly through the
-Swift bindings.
+Swift bindings — and that retired-format ciphertexts are rejected.
 
 ## Sentinel secret
 
@@ -14,6 +14,26 @@ trivially decryptable by anyone.
 The all-zero secret was chosen over a real-looking random one
 specifically because a misleading file that *looks* sensitive but is
 public would be worse than an obviously-test value.
+
+## Format-v2 fixtures (current)
+
+`blob_v2.json` and `metadata_v2.json` carry the context ids they were
+encrypted under — `blob_id` for the blob, `record_id` + `field_name`
+for the metadata field (AAD context binding, format v2). The Swift
+tests decrypt with exactly the ids embedded in the JSON; decrypting
+under any other id must fail with `Aead`.
+
+`signature_v1.json` is version-agnostic: signing is unchanged by the
+v2 cutover, so the file keeps its original name.
+
+## Format-v1 fixtures (frozen must-fail vectors)
+
+`blob_v1.json` and `metadata_v1.json` are frozen v0.3.x ciphertexts
+kept to prove the v1→v2 format cutover: v0.4.0 must REJECT them with
+`Aead` (the v1 blob has version byte 1; the v1 field was encrypted
+without the v2 AAD). They are must-fail vectors — **never regenerate,
+overwrite, or delete them**. The generator intentionally writes only
+the `*_v2.json` files (plus `signature_v1.json`).
 
 ## Regeneration
 

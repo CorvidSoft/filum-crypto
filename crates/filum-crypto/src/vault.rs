@@ -60,28 +60,38 @@ impl Vault {
         Self::open(&secret)
     }
 
-    pub fn encrypt_blob(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        blob::encrypt_chunked(plaintext, &self.wrap_key)
+    pub fn encrypt_blob(&self, plaintext: &[u8], blob_id: &str) -> Result<Vec<u8>> {
+        blob::encrypt_chunked(plaintext, &self.wrap_key, blob_id)
     }
 
-    pub fn decrypt_blob(&self, framed: &[u8]) -> Result<Vec<u8>> {
-        blob::decrypt_chunked(framed, &self.wrap_key)
+    pub fn decrypt_blob(&self, framed: &[u8], blob_id: &str) -> Result<Vec<u8>> {
+        blob::decrypt_chunked(framed, &self.wrap_key, blob_id)
     }
 
-    pub fn encrypt_file_to_blob(&self, in_path: &str, out_path: &str) -> Result<()> {
-        blob::encrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key)
+    pub fn encrypt_file_to_blob(&self, in_path: &str, out_path: &str, blob_id: &str) -> Result<()> {
+        blob::encrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key, blob_id)
     }
 
-    pub fn decrypt_blob_to_file(&self, in_path: &str, out_path: &str) -> Result<()> {
-        blob::decrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key)
+    pub fn decrypt_blob_to_file(&self, in_path: &str, out_path: &str, blob_id: &str) -> Result<()> {
+        blob::decrypt_file_chunked(in_path.as_ref(), out_path.as_ref(), &self.wrap_key, blob_id)
     }
 
-    pub fn encrypt_metadata_field(&self, plaintext: &[u8]) -> Result<EncryptedField> {
-        metadata::encrypt_field(plaintext, &self.metadata_key)
+    pub fn encrypt_metadata_field(
+        &self,
+        plaintext: &[u8],
+        record_id: &str,
+        field_name: &str,
+    ) -> Result<EncryptedField> {
+        metadata::encrypt_field(plaintext, &self.metadata_key, record_id, field_name)
     }
 
-    pub fn decrypt_metadata_field(&self, field: &EncryptedField) -> Result<Vec<u8>> {
-        metadata::decrypt_field(field, &self.metadata_key)
+    pub fn decrypt_metadata_field(
+        &self,
+        field: &EncryptedField,
+        record_id: &str,
+        field_name: &str,
+    ) -> Result<Vec<u8>> {
+        metadata::decrypt_field(field, &self.metadata_key, record_id, field_name)
     }
 
     pub fn sign_challenge(&self, nonce: &[u8]) -> DeviceSignature {
@@ -102,18 +112,42 @@ mod tests {
     fn vault_blob_round_trip() {
         let secret = [42u8; 32];
         let vault = Vault::open(&secret).unwrap();
-        let framed = vault.encrypt_blob(b"hello").unwrap();
-        let recovered = vault.decrypt_blob(&framed).unwrap();
+        let framed = vault.encrypt_blob(b"hello", "doc-1").unwrap();
+        let recovered = vault.decrypt_blob(&framed, "doc-1").unwrap();
         assert_eq!(recovered, b"hello");
+    }
+
+    #[test]
+    fn vault_blob_transplanted_id_fails() {
+        let secret = [42u8; 32];
+        let vault = Vault::open(&secret).unwrap();
+        let framed = vault.encrypt_blob(b"hello", "doc-1").unwrap();
+        let result = vault.decrypt_blob(&framed, "doc-2");
+        assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 
     #[test]
     fn vault_metadata_round_trip() {
         let secret = [42u8; 32];
         let vault = Vault::open(&secret).unwrap();
-        let field = vault.encrypt_metadata_field(b"name=Alice").unwrap();
-        let recovered = vault.decrypt_metadata_field(&field).unwrap();
+        let field = vault
+            .encrypt_metadata_field(b"name=Alice", "rec-1", "document-record")
+            .unwrap();
+        let recovered = vault
+            .decrypt_metadata_field(&field, "rec-1", "document-record")
+            .unwrap();
         assert_eq!(recovered, b"name=Alice");
+    }
+
+    #[test]
+    fn vault_metadata_transplanted_record_fails() {
+        let secret = [42u8; 32];
+        let vault = Vault::open(&secret).unwrap();
+        let field = vault
+            .encrypt_metadata_field(b"name=Alice", "rec-1", "document-record")
+            .unwrap();
+        let result = vault.decrypt_metadata_field(&field, "rec-2", "document-record");
+        assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 
     #[test]
@@ -145,10 +179,10 @@ mod tests {
         let secret = [42u8; 32];
         let framed = {
             let v = Vault::open(&secret).unwrap();
-            v.encrypt_blob(b"persistent").unwrap()
+            v.encrypt_blob(b"persistent", "doc-1").unwrap()
         };
         let v2 = Vault::open(&secret).unwrap();
-        assert_eq!(v2.decrypt_blob(&framed).unwrap(), b"persistent");
+        assert_eq!(v2.decrypt_blob(&framed, "doc-1").unwrap(), b"persistent");
     }
 
     #[test]
@@ -178,8 +212,8 @@ mod tests {
         let vault_a = Vault::open(&secret_a).unwrap();
         let vault_b = Vault::open(&secret_b).unwrap();
 
-        let framed = vault_a.encrypt_blob(b"secret data").unwrap();
-        let result = vault_b.decrypt_blob(&framed);
+        let framed = vault_a.encrypt_blob(b"secret data", "doc-1").unwrap();
+        let result = vault_b.decrypt_blob(&framed, "doc-1");
         assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 
@@ -188,8 +222,10 @@ mod tests {
         let vault_a = Vault::open(&[42u8; 32]).unwrap();
         let vault_b = Vault::open(&[99u8; 32]).unwrap();
 
-        let field = vault_a.encrypt_metadata_field(b"name").unwrap();
-        let result = vault_b.decrypt_metadata_field(&field);
+        let field = vault_a
+            .encrypt_metadata_field(b"name", "rec-1", "document-record")
+            .unwrap();
+        let result = vault_b.decrypt_metadata_field(&field, "rec-1", "document-record");
         assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 }

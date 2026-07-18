@@ -18,7 +18,7 @@ Most day-to-day work in this repo does NOT require reading the parent Filum DESI
 
 6. **MIT-compatible deps only.** The crate is MIT. New deps must be MIT, Apache-2.0, BSD, or compatible. No GPL.
 
-7. **Envelope formats are stable wire format.** `EncryptedBlob` and `EncryptedField` structs are part of the contract with the consuming Filum app. Changing field names, lengths, ordering, or the wrapped-key layout (currently `IV(12) || GCM ciphertext+tag`) is a major-version compatibility break — every existing user's vault becomes undecryptable.
+7. **Envelope formats are stable wire format.** The chunked blob envelope (framed bytes, header layout in `blob.rs`) and the `EncryptedField` struct are part of the contract with the consuming Filum app. Changing field names, lengths, ordering, or the wrapped-key layout (currently `IV(12) || GCM ciphertext+tag`) is a major-version compatibility break — every existing user's vault becomes undecryptable. Since v0.4.0 every envelope is also bound to caller-supplied context ids via AAD; the domain strings and canonical encoding in `aad.rs` are wire format under the same rule.
 
 8. **HKDF context strings are wire format too.** `WRAP_CTX`, `METADATA_CTX`, `SIGN_CTX` in `kdf.rs` are frozen byte literals (see `kdf.rs` for the exact bytes — the `…-crypto/v1/{wrap,metadata,sign}` prefix is a permanent wire constant and is intentionally NOT rebranded; renaming it re-derives every key and bricks all vaults). Changing the bytes of any context string is equivalent to changing the master secret — all existing vaults become undecryptable. The `v1` segment exists so we can add `v2` context strings later without rotating the v1 ones.
 
@@ -52,7 +52,7 @@ Most day-to-day work in this repo does NOT require reading the parent Filum DESI
 
 ```bash
 cargo build --workspace
-cargo test --workspace                                  # 38 tests pass at HEAD
+cargo test --workspace                                  # 62 tests pass at HEAD
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/build.sh           # rebuild Rust libs + regenerate Swift bindings (release)
@@ -64,9 +64,9 @@ swift package describe       # verify Package.swift parses
 
 The Filum iOS app sees exactly:
 
-- `filum_crypto::Vault` (methods: `open`, `from_recovery_phrase`, `encrypt_blob`, `decrypt_blob`, `encrypt_metadata_field`, `decrypt_metadata_field`, `sign_challenge`, `device_public_key`)
+- `filum_crypto::Vault` (methods: `open`, `from_recovery_phrase`, `encrypt_blob(pt, blob_id)`, `decrypt_blob(framed, blob_id)`, `encrypt_file_to_blob(in, out, blob_id)`, `decrypt_blob_to_file(in, out, blob_id)`, `encrypt_metadata_field(pt, record_id, field_name)`, `decrypt_metadata_field(field, record_id, field_name)`, `sign_challenge`, `device_public_key`). The context ids are bound into the envelopes as AAD (format v2) — decryption under a different id fails as `Aead`.
 - `filum_crypto::recovery::{generate_master_secret, secret_to_phrase, phrase_to_secret}`
-- Envelope structs `EncryptedBlob`, `EncryptedField`, `DeviceSignature`
+- Envelope structs `EncryptedField`, `DeviceSignature`
 - `FilumCryptoError`
 - `verify_signature` (so the backend can use the same verification path)
 

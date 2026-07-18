@@ -8,21 +8,30 @@
 //! extension (hard 20 MB limit) requires. A random per-blob 32-byte data key is
 //! wrapped under the vault wrapping key and carried in a fixed 72-byte header.
 //!
-//! Header layout (72 bytes): version `u8` = 1, then a 60-byte wrapped data key,
+//! Header layout (72 bytes): version `u8` = 2, then a 60-byte wrapped data key,
 //! then a 7-byte nonce prefix, then `chunk_size` as a big-endian `u32`. Body: a
 //! sequence of STREAM segments; every segment but the last is `chunk_size + 16`
 //! bytes (chunk + GCM tag), the last is `<= chunk_size + 16`.
+//!
+//! Format v2 binds every blob to a caller-supplied `blob_id` via AAD built in
+//! [`crate::aad`]: the key wrap authenticates the id plus every non-key header
+//! field (version, nonce prefix, chunk size), so a transplanted or
+//! header-tampered blob fails at [`unwrap_data_key`] before any body work; each
+//! STREAM segment additionally carries the id-only segment AAD as defense in
+//! depth. There is no v1 read path — version ≠ 2 is rejected outright.
 
 use aes_gcm::aead::stream::{DecryptorBE32, EncryptorBE32};
-use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+use aes_gcm::aead::{Aead, Payload};
+use aes_gcm::{Aes256Gcm, KeyInit};
 use rand_core::{OsRng, RngCore};
 use std::io::{Read, Write};
 use std::path::Path;
 use zeroize::Zeroizing;
 
+use crate::aad;
 use crate::error::{FilumCryptoError, Result};
 
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 /// `wrap_iv` (12 bytes) || AES-256-GCM(wrapping_key, wrap_iv, 32-byte data_key)
 /// where the ciphertext+tag is 48 bytes → 60 bytes total.
 const WRAPPED_KEY_LEN: usize = 60;
@@ -34,12 +43,16 @@ const HEADER_LEN: usize = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN + 4; // 72
 /// (`CHUNK_SIZE + 16`) plus its plaintext at a time.
 pub const CHUNK_SIZE: usize = 1024 * 1024;
 
-/// Wrap a 32-byte data key under `wrapping_key`.
+/// Wrap a 32-byte data key under `wrapping_key`, authenticating `aad`.
 ///
 /// Layout: `wrap_iv` (12 random bytes) || AES-256-GCM(wrapping_key, wrap_iv,
-/// data_key). The ciphertext+tag is 48 bytes, so the result is exactly
+/// data_key, aad). The ciphertext+tag is 48 bytes, so the result is exactly
 /// [`WRAPPED_KEY_LEN`] (60) bytes.
-fn wrap_data_key(data_key: &[u8; 32], wrapping_key: &[u8; 32]) -> Result<[u8; WRAPPED_KEY_LEN]> {
+fn wrap_data_key(
+    data_key: &[u8; 32],
+    wrapping_key: &[u8; 32],
+    aad: &[u8],
+) -> Result<[u8; WRAPPED_KEY_LEN]> {
     let mut wrap_iv = [0u8; 12];
     OsRng
         .try_fill_bytes(&mut wrap_iv)
@@ -47,7 +60,13 @@ fn wrap_data_key(data_key: &[u8; 32], wrapping_key: &[u8; 32]) -> Result<[u8; WR
 
     let wrapper = Aes256Gcm::new(wrapping_key.into());
     let wrapped_key_ct = wrapper
-        .encrypt(&wrap_iv.into(), data_key.as_slice())
+        .encrypt(
+            &wrap_iv.into(),
+            Payload {
+                msg: data_key.as_slice(),
+                aad,
+            },
+        )
         .map_err(|_| FilumCryptoError::Aead)?;
 
     // 12-byte IV + 48-byte ciphertext+tag = 60 bytes.
@@ -60,9 +79,14 @@ fn wrap_data_key(data_key: &[u8; 32], wrapping_key: &[u8; 32]) -> Result<[u8; WR
     Ok(out)
 }
 
-/// Unwrap a [`WRAPPED_KEY_LEN`]-byte wrapped key, returning the recovered
-/// 32-byte data key. The result zeroizes on drop.
-fn unwrap_data_key(wrapped: &[u8], wrapping_key: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>> {
+/// Unwrap a [`WRAPPED_KEY_LEN`]-byte wrapped key whose wrap authenticated
+/// `aad`, returning the recovered 32-byte data key. The result zeroizes on
+/// drop.
+fn unwrap_data_key(
+    wrapped: &[u8],
+    wrapping_key: &[u8; 32],
+    aad: &[u8],
+) -> Result<Zeroizing<[u8; 32]>> {
     if wrapped.len() != WRAPPED_KEY_LEN {
         return Err(FilumCryptoError::Aead);
     }
@@ -73,7 +97,13 @@ fn unwrap_data_key(wrapped: &[u8], wrapping_key: &[u8; 32]) -> Result<Zeroizing<
     let wrapper = Aes256Gcm::new(wrapping_key.into());
     let data_key_vec = Zeroizing::new(
         wrapper
-            .decrypt(&wrap_iv.into(), wrapped_ct)
+            .decrypt(
+                &wrap_iv.into(),
+                Payload {
+                    msg: wrapped_ct,
+                    aad,
+                },
+            )
             .map_err(|_| FilumCryptoError::Aead)?,
     );
     if data_key_vec.len() != 32 {
@@ -96,7 +126,15 @@ fn write_header(
 }
 
 /// Encrypt `plaintext` into the chunked framed format in memory.
-pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>> {
+pub fn encrypt_chunked(
+    plaintext: &[u8],
+    wrapping_key: &[u8; 32],
+    blob_id: &str,
+) -> Result<Vec<u8>> {
+    // Built first: validates blob_id (empty → InvalidContext) before any
+    // randomness or crypto.
+    let seg_aad = aad::blob_segment_aad(blob_id)?;
+
     let mut data_key = Zeroizing::new([0u8; 32]);
     OsRng
         .try_fill_bytes(&mut data_key[..])
@@ -105,7 +143,13 @@ pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<
     OsRng
         .try_fill_bytes(&mut nonce_prefix)
         .map_err(|_| FilumCryptoError::Randomness)?;
-    let wrapped = wrap_data_key(&data_key, wrapping_key)?;
+    let wrap_aad = aad::blob_wrap_aad(
+        blob_id,
+        VERSION,
+        &nonce_prefix,
+        (CHUNK_SIZE as u32).to_be_bytes(),
+    )?;
+    let wrapped = wrap_data_key(&data_key, wrapping_key, &wrap_aad)?;
 
     let mut out = Vec::with_capacity(HEADER_LEN + plaintext.len() + 64);
     write_header(&mut out, &wrapped, &nonce_prefix);
@@ -125,35 +169,56 @@ pub fn encrypt_chunked(plaintext: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<
     for i in 0..full_chunks {
         let start = i * CHUNK_SIZE;
         out.extend_from_slice(
-            &enc.encrypt_next(&plaintext[start..start + CHUNK_SIZE])
-                .map_err(|_| FilumCryptoError::Aead)?,
+            &enc.encrypt_next(Payload {
+                msg: &plaintext[start..start + CHUNK_SIZE],
+                aad: &seg_aad,
+            })
+            .map_err(|_| FilumCryptoError::Aead)?,
         );
     }
     out.extend_from_slice(
-        &enc.encrypt_last(&plaintext[full_chunks * CHUNK_SIZE..])
-            .map_err(|_| FilumCryptoError::Aead)?,
+        &enc.encrypt_last(Payload {
+            msg: &plaintext[full_chunks * CHUNK_SIZE..],
+            aad: &seg_aad,
+        })
+        .map_err(|_| FilumCryptoError::Aead)?,
     );
     Ok(out)
 }
 
 /// Decrypt a chunked framed blob in memory.
-pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>> {
+pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32], blob_id: &str) -> Result<Vec<u8>> {
+    // Built first: validates blob_id (empty → InvalidContext) before any
+    // parsing or crypto.
+    let seg_aad = aad::blob_segment_aad(blob_id)?;
+
     if framed.len() < HEADER_LEN || framed[0] != VERSION {
         return Err(FilumCryptoError::Aead);
     }
-    let data_key = unwrap_data_key(&framed[1..1 + WRAPPED_KEY_LEN], wrapping_key)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
     nonce_prefix
         .copy_from_slice(&framed[1 + WRAPPED_KEY_LEN..1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN]);
     let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
     let chunk_size = u32::from_be_bytes(framed[cs_off..cs_off + 4].try_into().unwrap()) as usize;
-    // `chunk_size` lives in the UNAUTHENTICATED header. The encoder always writes
-    // `CHUNK_SIZE`, so reject anything else rather than trust an attacker-controlled
-    // size to drive allocations/work — a tampered blob from an untrusted backend
-    // could otherwise demand a huge buffer (fatal under the extension's 20 MB cap).
+    // The encoder always writes `CHUNK_SIZE`, so reject anything else BEFORE it
+    // can size allocations or reach the key unwrap — a tampered blob from an
+    // untrusted backend could otherwise demand a huge buffer (fatal under the
+    // extension's 20 MB cap). The field is also covered by the wrap AAD below,
+    // but this guard keeps the DoS rejection allocation-free.
     if chunk_size != CHUNK_SIZE {
         return Err(FilumCryptoError::Aead);
     }
+    // Wrap AAD from the pinned constants — the equality guards above already
+    // rejected any other version/chunk_size — plus the header's random per-blob
+    // nonce_prefix, which IS covered by the AAD, so a tampered prefix fails the
+    // unwrap below.
+    let wrap_aad = aad::blob_wrap_aad(
+        blob_id,
+        VERSION,
+        &nonce_prefix,
+        (CHUNK_SIZE as u32).to_be_bytes(),
+    )?;
+    let data_key = unwrap_data_key(&framed[1..1 + WRAPPED_KEY_LEN], wrapping_key, &wrap_aad)?;
     let ct_chunk = chunk_size + 16;
 
     let cipher = Aes256Gcm::new((&*data_key).into());
@@ -169,16 +234,22 @@ pub fn decrypt_chunked(framed: &[u8], wrapping_key: &[u8; 32]) -> Result<Vec<u8>
     while let Some(chunk) = it.next() {
         if it.peek().is_some() {
             out.extend_from_slice(
-                &dec.decrypt_next(chunk)
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &dec.decrypt_next(Payload {
+                    msg: chunk,
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             );
         } else {
             // `decrypt_last` consumes `dec`; this is necessarily the terminal
             // iteration, so break (the borrow checker can't infer that the
             // peeked-`None` else-arm runs exactly once).
             out.extend_from_slice(
-                &dec.decrypt_last(chunk)
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &dec.decrypt_last(Payload {
+                    msg: chunk,
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             );
             break;
         }
@@ -204,7 +275,16 @@ fn read_full<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<usize> {
 
 /// Encrypt `input` to `output` in the chunked framed format, streaming a single
 /// chunk through memory at a time.
-pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]) -> Result<()> {
+pub fn encrypt_file_chunked(
+    input: &Path,
+    output: &Path,
+    wrapping_key: &[u8; 32],
+    blob_id: &str,
+) -> Result<()> {
+    // Built first: validates blob_id (empty → InvalidContext) before any
+    // randomness, crypto, or file I/O.
+    let seg_aad = aad::blob_segment_aad(blob_id)?;
+
     let mut data_key = Zeroizing::new([0u8; 32]);
     OsRng
         .try_fill_bytes(&mut data_key[..])
@@ -213,7 +293,13 @@ pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     OsRng
         .try_fill_bytes(&mut nonce_prefix)
         .map_err(|_| FilumCryptoError::Randomness)?;
-    let wrapped = wrap_data_key(&data_key, wrapping_key)?;
+    let wrap_aad = aad::blob_wrap_aad(
+        blob_id,
+        VERSION,
+        &nonce_prefix,
+        (CHUNK_SIZE as u32).to_be_bytes(),
+    )?;
+    let wrapped = wrap_data_key(&data_key, wrapping_key, &wrap_aad)?;
 
     let mut fin =
         std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilumCryptoError::Io)?);
@@ -235,15 +321,21 @@ pub fn encrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
         let n = read_full(&mut fin, &mut buf)?;
         if let Some(prev) = pending.take() {
             fout.write_all(
-                &enc.encrypt_next(&prev[..])
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &enc.encrypt_next(Payload {
+                    msg: &prev[..],
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             )
             .map_err(|_| FilumCryptoError::Io)?;
         }
         if n < CHUNK_SIZE {
             fout.write_all(
-                &enc.encrypt_last(&buf[..n])
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &enc.encrypt_last(Payload {
+                    msg: &buf[..n],
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             )
             .map_err(|_| FilumCryptoError::Io)?;
             break;
@@ -296,7 +388,16 @@ fn sibling_temp_path(output: &Path) -> Result<std::path::PathBuf> {
 /// `output` iff it is complete, fully authenticated plaintext. On any failure
 /// the temp file is removed (best effort) and `output` is left untouched; an
 /// interrupted process leaves at worst an orphaned `*.part` file.
-pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]) -> Result<()> {
+pub fn decrypt_file_chunked(
+    input: &Path,
+    output: &Path,
+    wrapping_key: &[u8; 32],
+    blob_id: &str,
+) -> Result<()> {
+    // Built first: validates blob_id (empty → InvalidContext) before any
+    // parsing, crypto, or file I/O.
+    let seg_aad = aad::blob_segment_aad(blob_id)?;
+
     let mut fin =
         std::io::BufReader::new(std::fs::File::open(input).map_err(|_| FilumCryptoError::Io)?);
     let mut header = [0u8; HEADER_LEN];
@@ -305,17 +406,25 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
     if header[0] != VERSION {
         return Err(FilumCryptoError::Aead);
     }
-    let data_key = unwrap_data_key(&header[1..1 + WRAPPED_KEY_LEN], wrapping_key)?;
     let mut nonce_prefix = [0u8; NONCE_PREFIX_LEN];
     nonce_prefix
         .copy_from_slice(&header[1 + WRAPPED_KEY_LEN..1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN]);
     let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
     let chunk_size = u32::from_be_bytes(header[cs_off..cs_off + 4].try_into().unwrap()) as usize;
-    // Reject an attacker-controlled chunk_size from the unauthenticated header
-    // before it sizes the read buffer below (see decrypt_chunked for rationale).
+    // Reject an attacker-controlled chunk_size before it sizes the read buffer
+    // below (see decrypt_chunked for rationale).
     if chunk_size != CHUNK_SIZE {
         return Err(FilumCryptoError::Aead);
     }
+    // Wrap AAD from the pinned constants + the header's nonce_prefix (which the
+    // AAD covers — a tampered prefix fails the unwrap); see decrypt_chunked.
+    let wrap_aad = aad::blob_wrap_aad(
+        blob_id,
+        VERSION,
+        &nonce_prefix,
+        (CHUNK_SIZE as u32).to_be_bytes(),
+    )?;
+    let data_key = unwrap_data_key(&header[1..1 + WRAPPED_KEY_LEN], wrapping_key, &wrap_aad)?;
     let ct_chunk = chunk_size + 16;
 
     let cipher = Aes256Gcm::new((&*data_key).into());
@@ -337,15 +446,21 @@ pub fn decrypt_file_chunked(input: &Path, output: &Path, wrapping_key: &[u8; 32]
         let n = read_full(&mut fin, &mut buf)?;
         if let Some(prev) = pending.take() {
             fout.write_all(
-                &dec.decrypt_next(&prev[..])
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &dec.decrypt_next(Payload {
+                    msg: &prev[..],
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             )
             .map_err(|_| FilumCryptoError::Io)?;
         }
         if n < ct_chunk {
             fout.write_all(
-                &dec.decrypt_last(&buf[..n])
-                    .map_err(|_| FilumCryptoError::Aead)?,
+                &dec.decrypt_last(Payload {
+                    msg: &buf[..n],
+                    aad: &seg_aad,
+                })
+                .map_err(|_| FilumCryptoError::Aead)?,
             )
             .map_err(|_| FilumCryptoError::Io)?;
             break;
@@ -377,6 +492,9 @@ mod tests {
         3 * CHUNK_SIZE + 7,
     ];
 
+    const BLOB_ID: &str = "blob-a";
+    const OTHER_BLOB_ID: &str = "blob-b";
+
     /// Deterministic-but-varied plaintext so swapped/reordered chunks differ.
     fn make_plaintext(len: usize) -> Vec<u8> {
         (0..len).map(|i| (i % 251) as u8).collect()
@@ -387,8 +505,8 @@ mod tests {
         let key = [42u8; 32];
         for &len in SIZES {
             let pt = make_plaintext(len);
-            let framed = encrypt_chunked(&pt, &key).unwrap();
-            let recovered = decrypt_chunked(&framed, &key).unwrap();
+            let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
+            let recovered = decrypt_chunked(&framed, &key, BLOB_ID).unwrap();
             assert_eq!(recovered, pt, "size {len} round-trip mismatch");
         }
     }
@@ -404,8 +522,8 @@ mod tests {
             let enc = tempfile::NamedTempFile::new().unwrap();
             let dec = tempfile::NamedTempFile::new().unwrap();
 
-            encrypt_file_chunked(src.path(), enc.path(), &key).unwrap();
-            decrypt_file_chunked(enc.path(), dec.path(), &key).unwrap();
+            encrypt_file_chunked(src.path(), enc.path(), &key, BLOB_ID).unwrap();
+            decrypt_file_chunked(enc.path(), dec.path(), &key, BLOB_ID).unwrap();
 
             let recovered = std::fs::read(dec.path()).unwrap();
             assert_eq!(recovered, pt, "size {len} file round-trip mismatch");
@@ -420,11 +538,11 @@ mod tests {
 
             // (a) in-memory encrypt → decrypt via file path.
             {
-                let framed = encrypt_chunked(&pt, &key).unwrap();
+                let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
                 let enc = tempfile::NamedTempFile::new().unwrap();
                 std::fs::write(enc.path(), &framed).unwrap();
                 let dec = tempfile::NamedTempFile::new().unwrap();
-                decrypt_file_chunked(enc.path(), dec.path(), &key).unwrap();
+                decrypt_file_chunked(enc.path(), dec.path(), &key, BLOB_ID).unwrap();
                 let recovered = std::fs::read(dec.path()).unwrap();
                 assert_eq!(recovered, pt, "size {len} mem-enc/file-dec mismatch");
             }
@@ -434,23 +552,164 @@ mod tests {
                 let src = tempfile::NamedTempFile::new().unwrap();
                 std::fs::write(src.path(), &pt).unwrap();
                 let enc = tempfile::NamedTempFile::new().unwrap();
-                encrypt_file_chunked(src.path(), enc.path(), &key).unwrap();
+                encrypt_file_chunked(src.path(), enc.path(), &key, BLOB_ID).unwrap();
                 let framed = std::fs::read(enc.path()).unwrap();
-                let recovered = decrypt_chunked(&framed, &key).unwrap();
+                let recovered = decrypt_chunked(&framed, &key, BLOB_ID).unwrap();
                 assert_eq!(recovered, pt, "size {len} file-enc/mem-dec mismatch");
             }
         }
     }
 
     #[test]
+    fn encrypted_blob_has_version_2() {
+        let key = [42u8; 32];
+        let framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        assert_eq!(framed[0], 2);
+    }
+
+    #[test]
+    fn transplanted_blob_id_fails_in_memory() {
+        let key = [42u8; 32];
+        let framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, OTHER_BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn transplanted_blob_id_fails_file_codec() {
+        let key = [42u8; 32];
+        let src = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), b"some data").unwrap();
+        let enc = tempfile::NamedTempFile::new().unwrap();
+        encrypt_file_chunked(src.path(), enc.path(), &key, BLOB_ID).unwrap();
+
+        let dec = tempfile::NamedTempFile::new().unwrap();
+        assert!(matches!(
+            decrypt_file_chunked(enc.path(), dec.path(), &key, OTHER_BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn transplanted_blob_id_fails_mem_encrypt_file_decrypt() {
+        let key = [42u8; 32];
+        let framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        let enc = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(enc.path(), &framed).unwrap();
+
+        let dec = tempfile::NamedTempFile::new().unwrap();
+        assert!(matches!(
+            decrypt_file_chunked(enc.path(), dec.path(), &key, OTHER_BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn transplanted_blob_id_fails_file_encrypt_mem_decrypt() {
+        let key = [42u8; 32];
+        let src = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), b"some data").unwrap();
+        let enc = tempfile::NamedTempFile::new().unwrap();
+        encrypt_file_chunked(src.path(), enc.path(), &key, BLOB_ID).unwrap();
+
+        let framed = std::fs::read(enc.path()).unwrap();
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, OTHER_BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn crafted_version_1_blob_rejected() {
+        // A valid v2 frame whose version byte is set to 1 must be rejected —
+        // there is no v1 read path.
+        let key = [42u8; 32];
+        let mut framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        framed[0] = 1;
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn tampered_version_byte_fails() {
+        let key = [42u8; 32];
+        let mut framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        framed[0] ^= 0xFF;
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn tampered_wrapped_key_byte_fails() {
+        let key = [42u8; 32];
+        let mut framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        // Offset 20 is well inside the wrapped-key field (bytes 1..61).
+        framed[20] ^= 1;
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn tampered_nonce_prefix_byte_fails() {
+        let key = [42u8; 32];
+        let mut framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        framed[1 + WRAPPED_KEY_LEN] ^= 1;
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, BLOB_ID),
+            Err(FilumCryptoError::Aead)
+        ));
+    }
+
+    #[test]
+    fn empty_blob_id_rejected_in_memory() {
+        let key = [42u8; 32];
+        assert!(matches!(
+            encrypt_chunked(b"some data", &key, ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+        let framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
+        assert!(matches!(
+            decrypt_chunked(&framed, &key, ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+    }
+
+    #[test]
+    fn empty_blob_id_rejected_file_codec() {
+        let key = [42u8; 32];
+        let src = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(src.path(), b"some data").unwrap();
+        let enc = tempfile::NamedTempFile::new().unwrap();
+        assert!(matches!(
+            encrypt_file_chunked(src.path(), enc.path(), &key, ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+
+        encrypt_file_chunked(src.path(), enc.path(), &key, BLOB_ID).unwrap();
+        let dec = tempfile::NamedTempFile::new().unwrap();
+        assert!(matches!(
+            decrypt_file_chunked(enc.path(), dec.path(), &key, ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+    }
+
+    #[test]
     fn chunked_flipped_body_byte_fails() {
         let key = [42u8; 32];
         let pt = make_plaintext(CHUNK_SIZE + 100);
-        let mut framed = encrypt_chunked(&pt, &key).unwrap();
+        let mut framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
         // Flip a byte well inside the body (past the 72-byte header).
         framed[HEADER_LEN + 10] ^= 1;
         assert!(matches!(
-            decrypt_chunked(&framed, &key),
+            decrypt_chunked(&framed, &key, BLOB_ID),
             Err(FilumCryptoError::Aead)
         ));
     }
@@ -459,10 +718,10 @@ mod tests {
     fn chunked_truncation_fails() {
         let key = [42u8; 32];
         let pt = make_plaintext(CHUNK_SIZE + 100);
-        let mut framed = encrypt_chunked(&pt, &key).unwrap();
+        let mut framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
         framed.truncate(framed.len() - 20);
         assert!(matches!(
-            decrypt_chunked(&framed, &key),
+            decrypt_chunked(&framed, &key, BLOB_ID),
             Err(FilumCryptoError::Aead)
         ));
     }
@@ -472,7 +731,7 @@ mod tests {
         let key = [42u8; 32];
         // >= 3 chunks so we have at least two full ct_chunk-sized blocks to swap.
         let pt = make_plaintext(3 * CHUNK_SIZE + 7);
-        let framed = encrypt_chunked(&pt, &key).unwrap();
+        let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
 
         let ct_chunk = CHUNK_SIZE + 16;
         let body_start = HEADER_LEN;
@@ -484,7 +743,7 @@ mod tests {
         a[first..first + ct_chunk].swap_with_slice(&mut b[..ct_chunk]);
 
         assert!(matches!(
-            decrypt_chunked(&tampered, &key),
+            decrypt_chunked(&tampered, &key, BLOB_ID),
             Err(FilumCryptoError::Aead)
         ));
     }
@@ -493,23 +752,23 @@ mod tests {
     fn chunked_wrong_wrapping_key_fails() {
         let key1 = [42u8; 32];
         let key2 = [43u8; 32];
-        let framed = encrypt_chunked(b"some data", &key1).unwrap();
-        let result = decrypt_chunked(&framed, &key2);
+        let framed = encrypt_chunked(b"some data", &key1, BLOB_ID).unwrap();
+        let result = decrypt_chunked(&framed, &key2, BLOB_ID);
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
     }
 
     #[test]
     fn chunked_tampered_chunk_size_header_rejected() {
-        // The chunk_size field (header offset 68..72) is unauthenticated. A tampered
-        // value must be rejected BEFORE it sizes any allocation — guard against a
-        // malicious/huge size (DoS) rather than attempting a giant buffer.
+        // A tampered chunk_size (header offset 68..72) must be rejected BEFORE it
+        // sizes any allocation — guard against a malicious/huge size (DoS) rather
+        // than attempting a giant buffer.
         let key = [42u8; 32];
-        let framed = encrypt_chunked(b"some data", &key).unwrap();
+        let framed = encrypt_chunked(b"some data", &key, BLOB_ID).unwrap();
         let cs_off = 1 + WRAPPED_KEY_LEN + NONCE_PREFIX_LEN;
         let mut tampered = framed.clone();
         tampered[cs_off..cs_off + 4].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
         assert!(matches!(
-            decrypt_chunked(&tampered, &key),
+            decrypt_chunked(&tampered, &key, BLOB_ID),
             Err(FilumCryptoError::Aead)
         ));
     }
@@ -531,14 +790,14 @@ mod tests {
     fn decrypt_file_success_leaves_only_output() {
         let key = [42u8; 32];
         let pt = make_plaintext(3 * CHUNK_SIZE + 7);
-        let framed = encrypt_chunked(&pt, &key).unwrap();
+        let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let enc_path = dir.path().join("blob.enc");
         std::fs::write(&enc_path, &framed).unwrap();
         let out_path = dir.path().join("out.bin");
 
-        decrypt_file_chunked(&enc_path, &out_path, &key).unwrap();
+        decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID).unwrap();
 
         let recovered = std::fs::read(&out_path).unwrap();
         assert_eq!(
@@ -552,7 +811,7 @@ mod tests {
     fn decrypt_file_truncated_at_segment_boundary_leaves_no_output() {
         let key = [42u8; 32];
         let pt = make_plaintext(3 * CHUNK_SIZE + 7);
-        let framed = encrypt_chunked(&pt, &key).unwrap();
+        let framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let enc_path = dir.path().join("blob.enc");
@@ -563,7 +822,7 @@ mod tests {
         std::fs::write(&enc_path, &framed[..cut]).unwrap();
         let out_path = dir.path().join("out.bin");
 
-        let result = decrypt_file_chunked(&enc_path, &out_path, &key);
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID);
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
         assert!(
             !out_path.exists(),
@@ -576,7 +835,7 @@ mod tests {
     fn decrypt_file_tampered_midstream_leaves_no_output() {
         let key = [42u8; 32];
         let pt = make_plaintext(2 * CHUNK_SIZE + 100);
-        let mut framed = encrypt_chunked(&pt, &key).unwrap();
+        let mut framed = encrypt_chunked(&pt, &key, BLOB_ID).unwrap();
         // Flip a byte inside the SECOND ciphertext segment so the first
         // segment authenticates and decrypts before the failure.
         framed[HEADER_LEN + (CHUNK_SIZE + 16) + 10] ^= 1;
@@ -586,7 +845,7 @@ mod tests {
         std::fs::write(&enc_path, &framed).unwrap();
         let out_path = dir.path().join("out.bin");
 
-        let result = decrypt_file_chunked(&enc_path, &out_path, &key);
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key, BLOB_ID);
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
         assert!(
             !out_path.exists(),
@@ -599,14 +858,14 @@ mod tests {
     fn decrypt_file_wrong_key_creates_no_files() {
         let key1 = [42u8; 32];
         let key2 = [43u8; 32];
-        let framed = encrypt_chunked(b"some data", &key1).unwrap();
+        let framed = encrypt_chunked(b"some data", &key1, BLOB_ID).unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let enc_path = dir.path().join("blob.enc");
         std::fs::write(&enc_path, &framed).unwrap();
         let out_path = dir.path().join("out.bin");
 
-        let result = decrypt_file_chunked(&enc_path, &out_path, &key2);
+        let result = decrypt_file_chunked(&enc_path, &out_path, &key2, BLOB_ID);
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
         // Key unwrap fails before any output file (temp included) is created.
         assert_dir_contains_exactly(dir.path(), &["blob.enc"]);

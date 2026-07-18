@@ -1,0 +1,10 @@
+{
+  "note": "Rust-produced golden. Decrypt with master_secret = [0u8; 32] and the embedded record_id + field_name.",
+  "record_id": "8d3e5f10-9a7b-4c2d-b6e4-0f1a2b3c4d5e",
+  "field_name": "document-record",
+  "plaintext_hex": "66696c756d2d63727970746f207632206d657461646174612066697874757265",
+  "field": {
+    "ciphertext_hex": "048b472198c4a00438e52751e89288202c01c648679c296d07447622b22168182904190d1eb18874055ef06f67c85bf5",
+    "iv_hex": "48b827560d11a5c66e56110a"
+  }
+}
