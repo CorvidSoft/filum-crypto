@@ -6,7 +6,7 @@
 //! u32-big-endian length-prefixed, which makes the encoding canonical and
 //! unambiguous: no concatenation of distinct inputs can collide.
 
-use crate::error::Result;
+use crate::error::{FilumCryptoError, Result};
 
 /// Domain-separation prefix for all blob AAD.
 pub(crate) const BLOB_DOMAIN: &[u8] = b"filum-crypto/v2/blob";
@@ -19,8 +19,16 @@ pub(crate) const BLOB_DOMAIN: &[u8] = b"filum-crypto/v2/blob";
 ///
 /// [`FilumCryptoError::InvalidContext`]: crate::FilumCryptoError::InvalidContext
 pub(crate) fn blob_segment_aad(blob_id: &str) -> Result<Vec<u8>> {
-    let _ = blob_id;
-    Ok(Vec::new())
+    let id = blob_id.as_bytes();
+    if id.is_empty() {
+        return Err(FilumCryptoError::InvalidContext);
+    }
+    let len = u32::try_from(id.len()).map_err(|_| FilumCryptoError::InvalidContext)?;
+    let mut aad = Vec::with_capacity(BLOB_DOMAIN.len() + 4 + id.len());
+    aad.extend_from_slice(BLOB_DOMAIN);
+    aad.extend_from_slice(&len.to_be_bytes());
+    aad.extend_from_slice(id);
+    Ok(aad)
 }
 
 /// AAD applied to the data-key wrap: [`blob_segment_aad`] followed by every
@@ -32,8 +40,12 @@ pub(crate) fn blob_wrap_aad(
     nonce_prefix: &[u8; 7],
     chunk_size_be: [u8; 4],
 ) -> Result<Vec<u8>> {
-    let _ = (blob_id, version, nonce_prefix, chunk_size_be);
-    Ok(Vec::new())
+    let mut aad = blob_segment_aad(blob_id)?;
+    aad.reserve(1 + nonce_prefix.len() + chunk_size_be.len());
+    aad.push(version);
+    aad.extend_from_slice(nonce_prefix);
+    aad.extend_from_slice(&chunk_size_be);
+    Ok(aad)
 }
 
 #[cfg(test)]
