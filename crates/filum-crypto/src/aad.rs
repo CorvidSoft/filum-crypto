@@ -31,6 +31,35 @@ pub(crate) fn blob_segment_aad(blob_id: &str) -> Result<Vec<u8>> {
     Ok(aad)
 }
 
+/// Domain-separation prefix for all metadata-field AAD.
+pub(crate) const FIELD_DOMAIN: &[u8] = b"filum-crypto/v2/field";
+
+/// AAD applied to a metadata field:
+/// `FIELD_DOMAIN || u32_be(len(record_id)) || record_id ||
+/// u32_be(len(field_name)) || field_name`.
+///
+/// Empty `record_id` or `field_name` is rejected with
+/// [`FilumCryptoError::InvalidContext`] — an empty identifier would silently
+/// produce an unbound ciphertext.
+///
+/// [`FilumCryptoError::InvalidContext`]: crate::FilumCryptoError::InvalidContext
+pub(crate) fn field_aad(record_id: &str, field_name: &str) -> Result<Vec<u8>> {
+    let record = record_id.as_bytes();
+    let field = field_name.as_bytes();
+    if record.is_empty() || field.is_empty() {
+        return Err(FilumCryptoError::InvalidContext);
+    }
+    let record_len = u32::try_from(record.len()).map_err(|_| FilumCryptoError::InvalidContext)?;
+    let field_len = u32::try_from(field.len()).map_err(|_| FilumCryptoError::InvalidContext)?;
+    let mut aad = Vec::with_capacity(FIELD_DOMAIN.len() + 4 + record.len() + 4 + field.len());
+    aad.extend_from_slice(FIELD_DOMAIN);
+    aad.extend_from_slice(&record_len.to_be_bytes());
+    aad.extend_from_slice(record);
+    aad.extend_from_slice(&field_len.to_be_bytes());
+    aad.extend_from_slice(field);
+    Ok(aad)
+}
+
 /// AAD applied to the data-key wrap: [`blob_segment_aad`] followed by every
 /// non-key header field — `version || nonce_prefix || chunk_size_be`.
 /// Authenticates the header: transplant or header tamper fails at unwrap.
