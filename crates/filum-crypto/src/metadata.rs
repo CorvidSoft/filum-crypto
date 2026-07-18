@@ -44,16 +44,16 @@ mod tests {
     fn round_trip_field() {
         let key = [7u8; 32];
         let plaintext = b"passport_no:AB1234567";
-        let field = encrypt_field(plaintext, &key).unwrap();
-        let recovered = decrypt_field(&field, &key).unwrap();
+        let field = encrypt_field(plaintext, &key, "rec-1", "name").unwrap();
+        let recovered = decrypt_field(&field, &key, "rec-1", "name").unwrap();
         assert_eq!(recovered, plaintext);
     }
 
     #[test]
     fn round_trip_empty_field() {
         let key = [7u8; 32];
-        let field = encrypt_field(&[], &key).unwrap();
-        let recovered = decrypt_field(&field, &key).unwrap();
+        let field = encrypt_field(&[], &key, "rec-1", "name").unwrap();
+        let recovered = decrypt_field(&field, &key, "rec-1", "name").unwrap();
         assert!(recovered.is_empty());
     }
 
@@ -61,17 +61,62 @@ mod tests {
     fn wrong_key_fails() {
         let key1 = [7u8; 32];
         let key2 = [8u8; 32];
-        let field = encrypt_field(b"secret", &key1).unwrap();
-        let result = decrypt_field(&field, &key2);
+        let field = encrypt_field(b"secret", &key1, "rec-1", "name").unwrap();
+        let result = decrypt_field(&field, &key2, "rec-1", "name");
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
+    }
+
+    #[test]
+    fn wrong_record_id_fails() {
+        // Transplant defense: a field encrypted for record A must not decrypt
+        // when presented as belonging to record B.
+        let key = [7u8; 32];
+        let field = encrypt_field(b"secret", &key, "rec-a", "name").unwrap();
+        let result = decrypt_field(&field, &key, "rec-b", "name");
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
+    }
+
+    #[test]
+    fn wrong_field_name_fails() {
+        let key = [7u8; 32];
+        let field = encrypt_field(b"secret", &key, "rec-a", "name").unwrap();
+        let result = decrypt_field(&field, &key, "rec-a", "other");
+        assert!(matches!(result, Err(FilumCryptoError::Aead)));
+    }
+
+    #[test]
+    fn empty_identifiers_are_invalid_context_on_encrypt() {
+        let key = [7u8; 32];
+        assert!(matches!(
+            encrypt_field(b"x", &key, "", "name"),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+        assert!(matches!(
+            encrypt_field(b"x", &key, "rec-1", ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+    }
+
+    #[test]
+    fn empty_identifiers_are_invalid_context_on_decrypt() {
+        let key = [7u8; 32];
+        let field = encrypt_field(b"x", &key, "rec-1", "name").unwrap();
+        assert!(matches!(
+            decrypt_field(&field, &key, "", "name"),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+        assert!(matches!(
+            decrypt_field(&field, &key, "rec-1", ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
     }
 
     #[test]
     fn tampered_ciphertext_fails() {
         let key = [7u8; 32];
-        let mut field = encrypt_field(b"secret", &key).unwrap();
+        let mut field = encrypt_field(b"secret", &key, "rec-1", "name").unwrap();
         field.ciphertext[0] ^= 1;
-        let result = decrypt_field(&field, &key);
+        let result = decrypt_field(&field, &key, "rec-1", "name");
         assert!(matches!(result, Err(FilumCryptoError::Aead)));
     }
 
@@ -82,8 +127,8 @@ mod tests {
         // catastrophic failure (allows plaintext recovery). See the matching
         // test in blob.rs for the flake-probability discussion.
         let key = [7u8; 32];
-        let a = encrypt_field(b"same", &key).unwrap();
-        let b = encrypt_field(b"same", &key).unwrap();
+        let a = encrypt_field(b"same", &key, "rec-1", "name").unwrap();
+        let b = encrypt_field(b"same", &key, "rec-1", "name").unwrap();
         assert_ne!(a.ciphertext, b.ciphertext);
         assert_ne!(a.iv, b.iv);
     }

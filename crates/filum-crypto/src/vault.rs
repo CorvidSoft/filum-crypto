@@ -120,9 +120,24 @@ mod tests {
     fn vault_metadata_round_trip() {
         let secret = [42u8; 32];
         let vault = Vault::open(&secret).unwrap();
-        let field = vault.encrypt_metadata_field(b"name=Alice").unwrap();
-        let recovered = vault.decrypt_metadata_field(&field).unwrap();
+        let field = vault
+            .encrypt_metadata_field(b"name=Alice", "rec-1", "document-record")
+            .unwrap();
+        let recovered = vault
+            .decrypt_metadata_field(&field, "rec-1", "document-record")
+            .unwrap();
         assert_eq!(recovered, b"name=Alice");
+    }
+
+    #[test]
+    fn vault_metadata_transplanted_record_fails() {
+        let secret = [42u8; 32];
+        let vault = Vault::open(&secret).unwrap();
+        let field = vault
+            .encrypt_metadata_field(b"name=Alice", "rec-1", "document-record")
+            .unwrap();
+        let result = vault.decrypt_metadata_field(&field, "rec-2", "document-record");
+        assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 
     #[test]
@@ -197,8 +212,10 @@ mod tests {
         let vault_a = Vault::open(&[42u8; 32]).unwrap();
         let vault_b = Vault::open(&[99u8; 32]).unwrap();
 
-        let field = vault_a.encrypt_metadata_field(b"name").unwrap();
-        let result = vault_b.decrypt_metadata_field(&field);
+        let field = vault_a
+            .encrypt_metadata_field(b"name", "rec-1", "document-record")
+            .unwrap();
+        let result = vault_b.decrypt_metadata_field(&field, "rec-1", "document-record");
         assert!(matches!(result, Err(crate::FilumCryptoError::Aead)));
     }
 }
