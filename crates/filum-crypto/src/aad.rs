@@ -95,4 +95,40 @@ mod tests {
             Err(FilumCryptoError::InvalidContext)
         ));
     }
+
+    #[test]
+    fn field_aad_golden_bytes() {
+        let aad = field_aad("rec-1", "name").unwrap();
+        let mut expected = b"filum-crypto/v2/field".to_vec();
+        expected.extend_from_slice(&[0, 0, 0, 5]);
+        expected.extend_from_slice(b"rec-1");
+        expected.extend_from_slice(&[0, 0, 0, 4]);
+        expected.extend_from_slice(b"name");
+        assert_eq!(aad, expected);
+    }
+
+    #[test]
+    fn field_aad_length_prefixes_prevent_boundary_ambiguity() {
+        // Without length prefixes ("ab","c") and ("a","bc") would concatenate
+        // to identical bytes; the prefixes must keep them distinct.
+        let ab_c = field_aad("ab", "c").unwrap();
+        let a_bc = field_aad("a", "bc").unwrap();
+        assert_ne!(ab_c, a_bc);
+    }
+
+    #[test]
+    fn empty_field_identifiers_are_invalid_context() {
+        assert!(matches!(
+            field_aad("", "name"),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+        assert!(matches!(
+            field_aad("rec-1", ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+        assert!(matches!(
+            field_aad("", ""),
+            Err(FilumCryptoError::InvalidContext)
+        ));
+    }
 }
