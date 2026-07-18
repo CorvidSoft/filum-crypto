@@ -105,4 +105,18 @@ final class MetadataFieldRoundTripTests: XCTestCase {
             }
         }
     }
+
+    /// Same guard for the field name: both context components must be non-empty.
+    func testEmptyFieldNameThrowsInvalidContext() throws {
+        let vault = try freshVault()
+        XCTAssertThrowsError(
+            try vault.encryptMetadataField(
+                plaintext: Data("x".utf8), recordId: Self.recordId, fieldName: "")
+        ) { err in
+            guard case FilumCryptoError.InvalidContext = err else {
+                XCTFail("expected FilumCryptoError.InvalidContext, got \(err)")
+                return
+            }
+        }
+    }
 }
