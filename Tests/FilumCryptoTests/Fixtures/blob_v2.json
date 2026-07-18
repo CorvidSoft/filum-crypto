@@ -1,0 +1,6 @@
+{
+  "note": "Rust-produced golden. Decrypt with master_secret = [0u8; 32] and the embedded blob_id.",
+  "blob_id": "1f6a7c9e-3b2d-4e8f-a510-6c4d2e0b9a71",
+  "plaintext_hex": "66696c756d2d63727970746f20763220626c6f622066697874757265",
+  "framed_hex": "0200069346e1d078a017248d7c523c26106a79d6ebc5ca37b43403b049b46f06417babc005e5ec91bbb4de3d823e41a679b3f05ddeac07743c16d9f46a03ebe8e21b0888001000005a0149cb7c41c0d7677493b2e039d148f365a341f08314e2cd7a0e31235a4bde9227d302a12aabef0fdf94ab"
+}
