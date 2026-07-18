@@ -75,8 +75,8 @@ let targets: [Target] =
             // download if anyone runs `swift build` without FILUM_CRYPTO_LOCAL=1
             // before the first release is cut; that's expected.
             url:
-                "https://github.com/CorvidSoft/filum-crypto/releases/download/v0.3.1/FilumCryptoFFI.xcframework.zip",
-            checksum: "78f96c30c518a8990c812e5e6fd7d99e02abf0731a8499c4c3fd2337a0028882"
+                "https://github.com/CorvidSoft/filum-crypto/releases/download/v0.4.0/FilumCryptoFFI.xcframework.zip",
+            checksum: "efa70f14842a9f943ec6cb5e18f7f0a01ecebe434cf57d88542cd10e10b3891b"
         ),
         .target(
             name: "FilumCrypto",
