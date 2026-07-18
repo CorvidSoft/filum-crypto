@@ -82,9 +82,13 @@ fn regenerate_fixtures() {
 
     // --- Blob fixture ---
     let blob_plaintext = b"filer-crypto v1 blob fixture".to_vec();
-    let framed = vault.encrypt_blob(&blob_plaintext).expect("encrypt blob");
+    let framed = vault
+        .encrypt_blob(&blob_plaintext, "fixture-blob-id")
+        .expect("encrypt blob");
     // Round-trip check before we commit the bytes.
-    let recovered = vault.decrypt_blob(&framed).expect("decrypt blob");
+    let recovered = vault
+        .decrypt_blob(&framed, "fixture-blob-id")
+        .expect("decrypt blob");
     assert_eq!(recovered, blob_plaintext);
     write_json(
         dir.join("blob_v1.json"),
