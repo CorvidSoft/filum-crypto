@@ -17,7 +17,10 @@ aes-gcm = "0.10"
 hkdf = "0.13"
 sha2 = "0.11"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
-bip39 = "2.0"
+# zeroize feature: Mnemonic derives Zeroize/ZeroizeOnDrop, so the word indices
+# (a complete encoding of the 256-bit master secret) are wiped on drop rather
+# than left in freed memory (#114).
+bip39 = { version = "2.0", features = ["zeroize"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 getrandom = "0.2"
