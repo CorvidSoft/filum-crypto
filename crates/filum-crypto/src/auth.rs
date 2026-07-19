@@ -27,12 +27,33 @@ impl core::fmt::Debug for DeviceSignature {
     }
 }
 
+/// Domain-separation tag prepended to the attestation message before it is
+/// signed by the master-derived account identity key (#115).
+///
+/// Signing `ATTEST_DOMAIN || message` — never the raw caller bytes —
+/// structurally binds every signature this key produces to the attestation
+/// purpose. A signature can't be replayed as a differently-framed protocol
+/// message, and a future flow that ever signs server-chosen bytes must use a
+/// *different* domain tag to be verifiable, so a malicious server cannot craft
+/// a "challenge" whose signature also validates as an attestation.
+///
+/// WIRE FORMAT (major-version stable, per CLAUDE.md invariant 7): the backend
+/// Ed25519 verifier MUST prepend these identical bytes before `verify_strict`.
+pub const ATTEST_DOMAIN: &[u8] = b"filum-crypto/v1/attest";
+
+fn domain_separated(message: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(ATTEST_DOMAIN.len() + message.len());
+    buf.extend_from_slice(ATTEST_DOMAIN);
+    buf.extend_from_slice(message);
+    buf
+}
+
 pub(crate) fn signing_key_from_seed(seed: &[u8; 32]) -> SigningKey {
     SigningKey::from_bytes(seed)
 }
 
-pub(crate) fn sign_challenge(key: &SigningKey, nonce: &[u8]) -> DeviceSignature {
-    let sig = key.sign(nonce);
+pub(crate) fn sign_challenge(key: &SigningKey, message: &[u8]) -> DeviceSignature {
+    let sig = key.sign(&domain_separated(message));
     DeviceSignature {
         bytes: sig.to_bytes(),
     }
@@ -42,13 +63,14 @@ pub(crate) fn public_key_bytes(key: &SigningKey) -> [u8; 32] {
     key.verifying_key().to_bytes()
 }
 
-/// Verify a signature. Public so tests can use it; in production the backend
-/// owns verification.
-pub fn verify_signature(public_key: &[u8; 32], nonce: &[u8], signature: &[u8; 64]) -> Result<()> {
+/// Verify an attestation signature over `ATTEST_DOMAIN || message`. Public so
+/// tests can use it; in production the backend owns verification and must apply
+/// the same domain prefix.
+pub fn verify_signature(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()> {
     let vk = ed25519_dalek::VerifyingKey::from_bytes(public_key)
         .map_err(|_| FilumCryptoError::InvalidSignature)?;
     let sig = Signature::from_bytes(signature);
-    vk.verify_strict(nonce, &sig)
+    vk.verify_strict(&domain_separated(message), &sig)
         .map_err(|_| FilumCryptoError::InvalidSignature)
 }
 
@@ -64,6 +86,26 @@ mod tests {
         let sig = sign_challenge(&key, nonce);
         let pk = public_key_bytes(&key);
         verify_signature(&pk, nonce, &sig.bytes).unwrap();
+    }
+
+    #[test]
+    fn signature_is_over_the_domain_separated_message() {
+        // Prove the domain tag is actually prepended (#115): the signature must
+        // verify against ATTEST_DOMAIN || message but NOT against the bare
+        // message. A verifier (or replay) that forgets the prefix is rejected.
+        let seed = [9u8; 32];
+        let key = signing_key_from_seed(&seed);
+        let message = b"backend-issued-nonce";
+        let sig = sign_challenge(&key, message);
+        let vk = ed25519_dalek::VerifyingKey::from_bytes(&public_key_bytes(&key)).unwrap();
+        let signature = Signature::from_bytes(&sig.bytes);
+
+        // Bare message: MUST fail.
+        assert!(vk.verify_strict(message, &signature).is_err());
+        // Domain-separated message: MUST succeed.
+        let mut expected = ATTEST_DOMAIN.to_vec();
+        expected.extend_from_slice(message);
+        assert!(vk.verify_strict(&expected, &signature).is_ok());
     }
 
     #[test]
