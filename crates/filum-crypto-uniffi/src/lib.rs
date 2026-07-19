@@ -169,6 +169,11 @@ fn secret_to_phrase(secret: Vec<u8>) -> Result<String> {
 }
 
 fn phrase_to_secret(phrase: String) -> Result<Vec<u8>> {
+    // Wrap the incoming phrase so its heap buffer is wiped when this scope ends
+    // (#114). The Swift String and JS/Hermes heap copies are accepted residual
+    // risk — no zeroize primitive exists there; this is the one in-Rust copy we
+    // can address.
+    let phrase = Zeroizing::new(phrase);
     let secret = recovery::phrase_to_secret(&phrase).map_err(FilumCryptoError::from)?;
     let secret = Zeroizing::new(secret);
     Ok(secret.to_vec())
@@ -194,6 +199,9 @@ impl Vault {
     }
 
     pub fn from_recovery_phrase(phrase: String) -> Result<Self> {
+        // Wrap the incoming phrase so its heap buffer is wiped when this scope
+        // ends (#114); see phrase_to_secret for the residual-risk note.
+        let phrase = Zeroizing::new(phrase);
         let core = CoreVault::from_recovery_phrase(&phrase).map_err(FilumCryptoError::from)?;
         Ok(Self { inner: core })
     }
