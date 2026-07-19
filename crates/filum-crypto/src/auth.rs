@@ -27,22 +27,35 @@ impl core::fmt::Debug for DeviceSignature {
     }
 }
 
-/// Domain-separation tag prepended to the attestation message before it is
-/// signed by the master-derived account identity key (#115).
+/// Domain-separation tag bound into the attestation message before it is signed
+/// by the master-derived account identity key (#115).
 ///
-/// Signing `ATTEST_DOMAIN || message` — never the raw caller bytes —
-/// structurally binds every signature this key produces to the attestation
-/// purpose. A signature can't be replayed as a differently-framed protocol
-/// message, and a future flow that ever signs server-chosen bytes must use a
-/// *different* domain tag to be verifiable, so a malicious server cannot craft
-/// a "challenge" whose signature also validates as an attestation.
+/// The key signs `len(ATTEST_DOMAIN) || ATTEST_DOMAIN || message` (see
+/// [`domain_separated`]) — never the raw caller bytes — which structurally binds
+/// every signature this key produces to the attestation purpose. A signature
+/// can't be replayed as a differently-framed protocol message, and a future
+/// flow that ever signs server-chosen bytes must use a *different* domain tag to
+/// be verifiable, so a malicious server cannot craft a "challenge" whose
+/// signature also validates as an attestation.
 ///
 /// WIRE FORMAT (major-version stable, per CLAUDE.md invariant 7): the backend
-/// Ed25519 verifier MUST prepend these identical bytes before `verify_strict`.
+/// Ed25519 verifier MUST reproduce the identical framing before `verify_strict`.
 pub const ATTEST_DOMAIN: &[u8] = b"filum-crypto/v1/attest";
 
+/// Frame a message for signing/verification as `len(ATTEST_DOMAIN) as u8 ||
+/// ATTEST_DOMAIN || message`.
+///
+/// The single-byte length prefix makes the (domain, message) encoding
+/// unambiguous: a raw `domain || message` concatenation would collide across
+/// domain tags where one is a prefix of another (`D1 || (suffix || m)` ==
+/// `D2 || m`), which would defeat the separation the moment a second domain is
+/// introduced. Length-prefixing the domain makes the boundary explicit, so
+/// distinct (domain, message) pairs always sign distinct bytes. Domain tags are
+/// short fixed constants, well under the 255-byte cap.
 fn domain_separated(message: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(ATTEST_DOMAIN.len() + message.len());
+    debug_assert!(ATTEST_DOMAIN.len() <= u8::MAX as usize);
+    let mut buf = Vec::with_capacity(1 + ATTEST_DOMAIN.len() + message.len());
+    buf.push(ATTEST_DOMAIN.len() as u8);
     buf.extend_from_slice(ATTEST_DOMAIN);
     buf.extend_from_slice(message);
     buf
@@ -90,9 +103,11 @@ mod tests {
 
     #[test]
     fn signature_is_over_the_domain_separated_message() {
-        // Prove the domain tag is actually prepended (#115): the signature must
-        // verify against ATTEST_DOMAIN || message but NOT against the bare
-        // message. A verifier (or replay) that forgets the prefix is rejected.
+        // Prove the domain framing is actually applied (#115): the signature
+        // must verify against len||ATTEST_DOMAIN||message but NOT against the
+        // bare message, nor against a raw domain||message concatenation (no
+        // length prefix). A verifier (or replay) that forgets the framing is
+        // rejected.
         let seed = [9u8; 32];
         let key = signing_key_from_seed(&seed);
         let message = b"backend-issued-nonce";
@@ -102,8 +117,13 @@ mod tests {
 
         // Bare message: MUST fail.
         assert!(vk.verify_strict(message, &signature).is_err());
-        // Domain-separated message: MUST succeed.
-        let mut expected = ATTEST_DOMAIN.to_vec();
+        // Raw (unprefixed) domain concatenation: MUST fail.
+        let mut raw = ATTEST_DOMAIN.to_vec();
+        raw.extend_from_slice(message);
+        assert!(vk.verify_strict(&raw, &signature).is_err());
+        // Length-prefixed framing: MUST succeed.
+        let mut expected = vec![ATTEST_DOMAIN.len() as u8];
+        expected.extend_from_slice(ATTEST_DOMAIN);
         expected.extend_from_slice(message);
         assert!(vk.verify_strict(&expected, &signature).is_ok());
     }
